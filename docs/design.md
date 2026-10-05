@@ -108,7 +108,7 @@ Runs per subscription, one subscription at a time:
 | Key | Default | Notes |
 |---|---|---|
 | `App:PublicBaseUrl` | — (required) | `https://yoto.example.com` |
-| `App:DataDirectory` | `/data` (container), `./data` (dev) | DB, Data Protection keys, temp downloads |
+| `App:DataDirectory` | `/data` (container), `<repo>/.data` (dev) | DB, Data Protection keys, temp downloads |
 | `Yoto:ClientId` | — (required) | |
 | `Sync:DefaultPollInterval` | `01:00:00` | |
 | `Sync:RunOnStartup` | `true` | |
@@ -125,7 +125,7 @@ Dev: `launchSettings.json` binds `http://0.0.0.0:5164`. Container: listens on 80
 ## Milestones
 
 1. **M1 Foundation** ✅ *(2026-10-05)*: Web project, EF Core + migrations, Data Protection, Yoto connect/reconnect flow, dashboard showing account status.
-2. **M2 Feeds**: subscription CRUD, feed preview, polling + episode upsert, episodes table.
+2. **M2 Feeds** *(code written 2026-10-05; scheduled polling lands with the M3 scheduler)*: subscription CRUD, feed preview, polling + episode upsert, episodes table.
 3. **M3 Sync**: planner, audio pipeline, publish, scheduler, Sync now, sync history. *End-to-end usable here.*
 4. **M4 Curation**: favourites, playlist picker for existing cards, planned-playlist preview, export/import.
 5. **M5 Deploy**: Dockerfile (non-root, `/data` volume), compose snippet, GHCR build via GitHub Actions.

@@ -20,6 +20,7 @@ public sealed class YotoContentBody
 {
     public required List<YotoChapter> Chapters { get; set; }
     public JsonObject? Config { get; set; }
+    public string? PlaybackType { get; set; }
 }
 
 public sealed class YotoChapter

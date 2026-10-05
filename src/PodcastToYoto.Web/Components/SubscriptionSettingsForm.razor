@@ -1,0 +1,58 @@
+<EditForm Model="Model" OnValidSubmit="OnValidSubmit" class="form">
+    <DataAnnotationsValidator />
+
+    <label>Name
+        <InputText @bind-Value="Model.Name" />
+        <ValidationMessage For="() => Model.Name" />
+    </label>
+
+    <label>Feed URL
+        <InputText @bind-Value="Model.FeedUrl" readonly="@LockFeedUrl" />
+        <ValidationMessage For="() => Model.FeedUrl" />
+    </label>
+
+    <label>Playlist title <span class="muted">(blank = podcast title)</span>
+        <InputText @bind-Value="Model.TitleOverride" />
+    </label>
+
+    <div class="grid2">
+        <label>Recent episodes to keep
+            <InputNumber @bind-Value="Model.RecentCount" min="1" max="100" />
+            <ValidationMessage For="() => Model.RecentCount" />
+        </label>
+
+        <label>Max tracks on card
+            <InputNumber @bind-Value="Model.MaxTracks" min="1" max="100" />
+            <ValidationMessage For="() => Model.MaxTracks" />
+        </label>
+
+        <label>Order
+            <InputSelect @bind-Value="Model.Order">
+                <option value="@PlaylistOrder.NewestFirst">Newest first</option>
+                <option value="@PlaylistOrder.OldestFirst">Oldest first</option>
+            </InputSelect>
+        </label>
+
+        <label>Poll interval (minutes) <span class="muted">(blank = default)</span>
+            <InputNumber @bind-Value="Model.PollIntervalMinutes" min="5" />
+            <ValidationMessage For="() => Model.PollIntervalMinutes" />
+        </label>
+    </div>
+
+    <label class="check"><InputCheckbox @bind-Value="Model.IncludeTrailers" /> Include trailers</label>
+    <label class="check"><InputCheckbox @bind-Value="Model.Enabled" /> Enabled (polled and synced automatically)</label>
+
+    <div class="row">
+        <button type="submit" class="primary" disabled="@Busy">@SubmitLabel</button>
+        @ChildContent
+    </div>
+</EditForm>
+
+@code {
+    [Parameter, EditorRequired] public SubscriptionSettings Model { get; set; } = default!;
+    [Parameter] public EventCallback<EditContext> OnValidSubmit { get; set; }
+    [Parameter] public string SubmitLabel { get; set; } = "Save";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool LockFeedUrl { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

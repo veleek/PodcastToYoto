@@ -1,0 +1,184 @@
+@page "/subscriptions/{Id:int}"
+@inject SubscriptionService Subscriptions
+@inject NavigationManager Nav
+@inject TimeProvider Time
+
+<PageTitle>@(_sub?.Name ?? "Subscription") · Podcast → Yoto</PageTitle>
+
+@if (_notFound)
+{
+    <section class="card"><h2>Not found</h2><p><a href="/">Back to dashboard</a></p></section>
+}
+else if (_sub is null)
+{
+    <p class="muted">Loading…</p>
+}
+else
+{
+    <section class="card">
+        <div class="sub-head">
+            @if (_sub.CoverSourceUrl is not null)
+            {
+                <img src="@_sub.CoverSourceUrl" alt="" />
+            }
+            <div class="grow">
+                <h2>@_sub.Name</h2>
+                <div class="muted" style="overflow-wrap:anywhere">@_sub.FeedUrl</div>
+                <dl class="kv">
+                    <dt>Playlist</dt>
+                    <dd>@(_sub.YotoCardId is null ? "Created on first sync" : _sub.YotoCardId)</dd>
+                    <dt>Episodes</dt>
+                    <dd>@_sub.Episodes.Count total · @_sub.Episodes.Count(e => e.IsFavourite) favourites · @_sub.Episodes.Count(e => e.AudioId is not null) uploaded</dd>
+                    <dt>Feed checked</dt>
+                    <dd>@Format.Ago(_sub.LastPolledAt, Time.GetUtcNow())</dd>
+                    <dt>Status</dt>
+                    <dd>
+                        @if (!_sub.Enabled) { <span class="badge none">Disabled</span> }
+                        else if (_sub.LastError is not null) { <span class="badge err">Error</span> <span>@_sub.LastError</span> }
+                        else { <span class="badge ok">OK</span> }
+                    </dd>
+                </dl>
+                <div class="row">
+                    <button @onclick="PollAsync" disabled="@_busy">Check feed now</button>
+                    <button @onclick="() => _editing = !_editing">@(_editing ? "Close settings" : "Settings")</button>
+                </div>
+                @if (_message is not null)
+                {
+                    <div class="toast">@_message</div>
+                }
+            </div>
+        </div>
+    </section>
+
+    @if (_editing)
+    {
+        <section class="card">
+            <h2>Settings</h2>
+            <SubscriptionSettingsForm Model="_settings" OnValidSubmit="SaveAsync" Busy="_busy">
+                @if (_confirmDelete)
+                {
+                    <button type="button" class="danger" @onclick="DeleteAsync">Really delete?</button>
+                    <button type="button" @onclick="() => _confirmDelete = false">Cancel</button>
+                }
+                else
+                {
+                    <button type="button" class="danger" @onclick="() => _confirmDelete = true">Delete subscription</button>
+                }
+            </SubscriptionSettingsForm>
+            <p class="muted">Deleting removes the subscription and its episode history here. The Yoto playlist is left untouched.</p>
+        </section>
+    }
+
+    <section class="card">
+        <div class="row" style="justify-content:space-between">
+            <h2>Episodes</h2>
+            <div class="row">
+                <input class="text" style="width:16rem" placeholder="Filter…" @bind="_filter" @bind:event="oninput" />
+                <label class="row"><input type="checkbox" @bind="_favouritesOnly" /> Favourites only</label>
+            </div>
+        </div>
+        <table class="eps">
+            <thead>
+                <tr><th></th><th>Published</th><th>Title</th><th>Length</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var e in VisibleEpisodes)
+                {
+                    <tr class="@(e.MissingFromFeedSince is null ? "" : "missing")" @key="e.Id">
+                        <td>
+                            <button class="star @(e.IsFavourite ? "on" : "")" title="@(e.IsFavourite ? "Unpin" : "Pin as favourite")"
+                                    @onclick="() => ToggleFavouriteAsync(e)">@(e.IsFavourite ? "★" : "☆")</button>
+                        </td>
+                        <td class="num">@Format.Date(e.PublishedAt)</td>
+                        <td>
+                            @e.Title
+                            @if (e.EpisodeType is "bonus" or "trailer") { <span class="badge none">@e.EpisodeType</span> }
+                            @if (e.MissingFromFeedSince is not null) { <span class="badge warn" title="Since @Format.Local(e.MissingFromFeedSince)">not in feed</span> }
+                        </td>
+                        <td class="num">@Format.Duration(e.DurationSeconds)</td>
+                        <td>@(e.AudioId is null ? "" : "✓")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Subscription? _sub;
+    private SubscriptionSettings _settings = new();
+    private bool _notFound, _busy, _editing, _confirmDelete, _favouritesOnly;
+    private string _filter = "";
+    private string? _message;
+
+    private IEnumerable<Episode> VisibleEpisodes => _sub!.Episodes
+        .Where(e => !_favouritesOnly || e.IsFavourite)
+        .Where(e => string.IsNullOrWhiteSpace(_filter) || e.Title.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _sub = await Subscriptions.GetAsync(Id);
+        _notFound = _sub is null;
+        if (_sub is not null) _settings = SubscriptionSettings.From(_sub);
+    }
+
+    private async Task PollAsync()
+    {
+        _busy = true;
+        try
+        {
+            var outcome = await Subscriptions.PollAsync(Id);
+            _message = outcome.Describe();
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Subscriptions.UpdateSettingsAsync(Id, _settings);
+            _message = "Settings saved.";
+            _editing = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = $"Save failed: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        await Subscriptions.DeleteAsync(Id);
+        Nav.NavigateTo("/");
+    }
+
+    private async Task ToggleFavouriteAsync(Episode e)
+    {
+        var value = !e.IsFavourite;
+        e.IsFavourite = value; // optimistic
+        try
+        {
+            await Subscriptions.SetFavouriteAsync(e.Id, value);
+        }
+        catch (Exception ex)
+        {
+            e.IsFavourite = !value;
+            _message = $"Couldn't update favourite: {ex.Message}";
+        }
+    }
+}

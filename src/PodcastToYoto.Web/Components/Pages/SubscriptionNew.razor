@@ -1,0 +1,97 @@
+@page "/subscriptions/new"
+@using PodcastToYoto.Feeds
+@inject SubscriptionService Subscriptions
+@inject NavigationManager Nav
+
+<PageTitle>Add subscription · Podcast → Yoto</PageTitle>
+
+<h1 style="font-size:1.2rem">Add subscription</h1>
+
+<section class="card">
+    <h2>1. Podcast feed</h2>
+    <div class="row">
+        <input class="text grow" placeholder="https://… RSS feed URL" @bind="_url" @bind:event="oninput" @onkeydown="OnKey" />
+        <button @onclick="PreviewAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_url))">Preview</button>
+    </div>
+    @if (_error is not null)
+    {
+        <div class="alert" style="margin-top:.75rem">@_error</div>
+    }
+</section>
+
+@if (_feed is not null)
+{
+    <section class="card">
+        <div class="sub-head">
+            @if (_feed.ImageUrl is not null)
+            {
+                <img src="@_feed.ImageUrl" alt="" />
+            }
+            <div class="grow">
+                <h2>@_feed.Title</h2>
+                <div class="muted">@_feed.Author · @_feed.Episodes.Count episodes</div>
+                <ul class="plain">
+                    @foreach (var e in _feed.Episodes.Take(5))
+                    {
+                        <li>@Format.Date(e.Published) — @e.Title <span class="muted">(@Format.Duration((long?)e.Duration?.TotalSeconds))</span></li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2>2. Settings</h2>
+        <p class="muted">A new Yoto playlist is created on the first sync. Picking an existing playlist comes later (M4).</p>
+        <SubscriptionSettingsForm Model="_settings" OnValidSubmit="CreateAsync" SubmitLabel="Create subscription" Busy="_busy" LockFeedUrl="true" />
+    </section>
+}
+
+@code {
+    private string _url = "";
+    private PodcastFeed? _feed;
+    private SubscriptionSettings _settings = new();
+    private string? _error;
+    private bool _busy;
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await PreviewAsync();
+    }
+
+    private async Task PreviewAsync()
+    {
+        _busy = true;
+        _error = null;
+        _feed = null;
+        try
+        {
+            var url = _url.Trim();
+            _feed = await Subscriptions.PreviewAsync(url);
+            _settings = new SubscriptionSettings { Name = _feed.Title, FeedUrl = url };
+        }
+        catch (Exception ex)
+        {
+            _error = $"Couldn't read that feed: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        _busy = true;
+        try
+        {
+            var (id, _) = await Subscriptions.CreateAsync(_settings);
+            Nav.NavigateTo($"/subscriptions/{id}");
+        }
+        catch (Exception ex)
+        {
+            _error = $"Couldn't create subscription: {ex.Message}";
+            _busy = false;
+        }
+    }
+}

@@ -1,6 +1,7 @@
 @page "/"
-@using PodcastToYoto.Web.Data
 @inject YotoAccountService Account
+@inject SubscriptionService Subscriptions
+@inject TimeProvider Time
 @inject NavigationManager Nav
 
 <PageTitle>Podcast → Yoto</PageTitle>
@@ -38,8 +39,8 @@
         @if (_status.Status != AccountStatus.Disconnected)
         {
             <dl class="kv">
-                <dt>Connected</dt><dd>@Local(_status.ConnectedAt)</dd>
-                <dt>Access token expires</dt><dd>@Local(_status.ExpiresAt)</dd>
+                <dt>Connected</dt><dd>@Format.Local(_status.ConnectedAt)</dd>
+                <dt>Access token expires</dt><dd>@Format.Local(_status.ExpiresAt)</dd>
                 <dt>Scopes</dt><dd>@_status.Scope</dd>
                 @if (!string.IsNullOrEmpty(_status.LastError))
                 {
@@ -69,7 +70,7 @@
                 <ul class="plain">
                     @foreach (var p in _test.Playlists.OrderByDescending(p => p.UpdatedAt))
                     {
-                        <li><code>@p.CardId</code> @p.Title <span class="muted">— updated @Local(p.UpdatedAt)</span></li>
+                        <li><code>@p.CardId</code> @p.Title <span class="muted">— updated @Format.Local(p.UpdatedAt)</span></li>
                     }
                 </ul>
             }
@@ -78,8 +79,36 @@
 </section>
 
 <section class="card">
-    <h2>Subscriptions</h2>
-    <p class="muted">Coming in M2.</p>
+    <div class="row" style="justify-content:space-between">
+        <h2>Subscriptions</h2>
+        <a class="button" href="/subscriptions/new">Add subscription</a>
+    </div>
+    @if (_subs is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_subs.Count == 0)
+    {
+        <p class="muted">No subscriptions yet.</p>
+    }
+    else
+    {
+        <div class="subs">
+            @foreach (var s in _subs)
+            {
+                <a class="sub" href="/subscriptions/@s.Id">
+                    @if (s.CoverSourceUrl is not null) { <img src="@s.CoverSourceUrl" alt="" /> }
+                    <div class="grow">
+                        <div><strong>@s.Name</strong></div>
+                        <div class="muted">@s.EpisodeCount episodes · @s.FavouriteCount favourites · feed checked @Format.Ago(s.LastPolledAt, Time.GetUtcNow())</div>
+                    </div>
+                    @if (!s.Enabled) { <span class="badge none">Disabled</span> }
+                    else if (s.LastError is not null) { <span class="badge err" title="@s.LastError">Error</span> }
+                    else { <span class="badge ok">OK</span> }
+                </a>
+            }
+        </div>
+    }
 </section>
 
 @code {
@@ -89,8 +118,13 @@
     private YotoAccountStatus? _status;
     private YotoConnectionTest? _test;
     private bool _busy;
+    private IReadOnlyList<SubscriptionSummary>? _subs;
 
-    protected override async Task OnInitializedAsync() => _status = await Account.GetStatusAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _status = await Account.GetStatusAsync();
+        _subs = await Subscriptions.ListAsync();
+    }
 
     // Full page load: /auth/login is a server endpoint, not a Blazor route.
     private void Connect() => Nav.NavigateTo("/auth/login", forceLoad: true);
@@ -124,6 +158,4 @@
         }
     }
 
-    private static string Local(DateTimeOffset? value) =>
-        value is null ? "—" : value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
 }

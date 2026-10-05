@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using System.Xml;
 using System.Xml.Linq;
 
 namespace PodcastToYoto.Feeds;
@@ -9,11 +10,28 @@ public static partial class PodcastFeedParser
 {
     private static readonly XNamespace Itunes = "http://www.itunes.com/dtds/podcast-1.0.dtd";
 
+    // DTDs ignored and no resolver: feeds are untrusted input.
+    private static XmlReaderSettings ReaderSettings(bool async) => new()
+    {
+        Async = async,
+        DtdProcessing = DtdProcessing.Ignore,
+        XmlResolver = null,
+        IgnoreComments = true,
+    };
+
     public static PodcastFeed Parse(Stream xml)
     {
-        var doc = XDocument.Load(xml);
-        return Parse(doc);
+        using var reader = XmlReader.Create(xml, ReaderSettings(async: false));
+        return Parse(XDocument.Load(reader));
     }
+
+    public static async Task<PodcastFeed> ParseAsync(Stream xml, CancellationToken ct = default)
+    {
+        using var reader = XmlReader.Create(xml, ReaderSettings(async: true));
+        return Parse(await XDocument.LoadAsync(reader, LoadOptions.None, ct));
+    }
+
+    public static PodcastFeed Parse(string xml) => Parse(XDocument.Parse(xml));
 
     public static PodcastFeed Parse(XDocument doc)
     {

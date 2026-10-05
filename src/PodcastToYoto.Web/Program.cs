@@ -5,7 +5,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PodcastToYoto.Web.Components;
 using PodcastToYoto.Web.Data;
+using PodcastToYoto.Feeds;
 using PodcastToYoto.Web.Options;
+using PodcastToYoto.Web.Subscriptions;
+using PodcastToYoto.Web.Sync;
 using PodcastToYoto.Web.Yoto;
 using PodcastToYoto.Yoto;
 
@@ -47,6 +50,19 @@ builder.Services.AddKeyedSingleton("yoto", (_, _) => new HttpClient(new SocketsH
     Timeout = TimeSpan.FromMinutes(10),
 });
 
+// Feeds: redirects followed (feeds often move hosts), modest timeout.
+builder.Services.AddKeyedSingleton("feeds", (_, _) => new HttpClient(new SocketsHttpHandler
+{
+    PooledConnectionLifetime = TimeSpan.FromMinutes(15),
+    AutomaticDecompression = DecompressionMethods.All,
+    AllowAutoRedirect = true,
+})
+{
+    Timeout = TimeSpan.FromMinutes(1),
+});
+builder.Services.AddSingleton(sp => new FeedFetcher(sp.GetRequiredKeyedService<HttpClient>("feeds")));
+builder.Services.AddSingleton<SubscriptionService>();
+
 // ---- Yoto --------------------------------------------------------------------------------------
 builder.Services.AddSingleton(sp =>
 {
@@ -61,6 +77,22 @@ builder.Services.AddSingleton(sp => new YotoTokenProvider(
 builder.Services.AddSingleton(sp => new YotoApiClient(
     sp.GetRequiredKeyedService<HttpClient>("yoto"), sp.GetRequiredService<YotoTokenProvider>()));
 builder.Services.AddSingleton<YotoAccountService>();
+builder.Services.AddSingleton(sp => new YotoAudioUploader(sp.GetRequiredService<YotoApiClient>()));
+
+// ---- Sync --------------------------------------------------------------------------------------
+var tempDir = Path.Combine(dataDir, "tmp");
+if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); // leftovers from a crash
+builder.Services.AddKeyedSingleton("downloads", (_, _) => new HttpClient(EpisodeDownloader.CreateHandler())
+{
+    Timeout = TimeSpan.FromMinutes(10),
+});
+builder.Services.AddSingleton(sp => new EpisodeDownloader(sp.GetRequiredKeyedService<HttpClient>("downloads"), tempDir));
+builder.Services.AddSingleton<AudioPipeline>();
+builder.Services.AddSingleton<SyncActivity>();
+builder.Services.AddSingleton<INotificationSink, LogNotificationSink>();
+builder.Services.AddSingleton<SyncEngine>();
+builder.Services.AddSingleton<SyncScheduler>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SyncScheduler>());
 
 // ---- Web ---------------------------------------------------------------------------------------
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
