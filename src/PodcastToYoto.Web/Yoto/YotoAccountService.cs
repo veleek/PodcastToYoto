@@ -9,13 +9,15 @@ public sealed record YotoAccountStatus(
     string? Scope,
     DateTimeOffset? ExpiresAt,
     DateTimeOffset? ConnectedAt,
-    string? LastError);
+    string? LastError,
+    IReadOnlyList<string> MissingScopes);
 
 public sealed record YotoConnectionTest(bool Ok, string Message, IReadOnlyList<YotoCardSummary> Playlists);
 
 /// <summary>Account-level operations used by the UI.</summary>
 public sealed class YotoAccountService(
     IDbContextFactory<AppDbContext> dbFactory,
+    YotoOAuthOptions oauth,
     YotoTokenProvider tokens,
     YotoApiClient api,
     ILogger<YotoAccountService> logger)
@@ -24,9 +26,16 @@ public sealed class YotoAccountService(
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var a = await db.YotoAccounts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == YotoAccount.SingletonId, ct);
-        return a is null
-            ? new YotoAccountStatus(AccountStatus.Disconnected, null, null, null, null)
-            : new YotoAccountStatus(a.Status, a.Scope, a.ExpiresAt, a.ConnectedAt, a.LastError);
+        if (a is null)
+            return new YotoAccountStatus(AccountStatus.Disconnected, null, null, null, null, []);
+
+        // Scopes requested by config but not granted on the current token (e.g. config changed since login).
+        var granted = (a.Scope ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+        var missing = a.Status == AccountStatus.Connected
+            ? oauth.Scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(x => !granted.Contains(x)).ToList()
+            : new List<string>();
+
+        return new YotoAccountStatus(a.Status, a.Scope, a.ExpiresAt, a.ConnectedAt, a.LastError, missing);
     }
 
     /// <summary>Calls GET /content/mine — exercises token refresh + API access end to end.</summary>

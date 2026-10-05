@@ -1,5 +1,9 @@
 @page "/subscriptions/{Id:int}"
+@implements IDisposable
 @inject SubscriptionService Subscriptions
+@inject SyncScheduler Scheduler
+@inject SyncEngine Engine
+@inject SyncActivity Activity
 @inject NavigationManager Nav
 @inject TimeProvider Time
 
@@ -26,23 +30,52 @@ else
                 <div class="muted" style="overflow-wrap:anywhere">@_sub.FeedUrl</div>
                 <dl class="kv">
                     <dt>Playlist</dt>
-                    <dd>@(_sub.YotoCardId is null ? "Created on first sync" : _sub.YotoCardId)</dd>
+                    <dd>
+                        @if (_sub.YotoCardId is null)
+                        {
+                            <span>Created on first sync</span>
+                        }
+                        else
+                        {
+                            <code>@_sub.YotoCardId</code>
+                            <span> “@(_sub.TitleOverride ?? _sub.Name)”</span>
+                        }
+                    </dd>
                     <dt>Episodes</dt>
                     <dd>@_sub.Episodes.Count total · @_sub.Episodes.Count(e => e.IsFavourite) favourites · @_sub.Episodes.Count(e => e.AudioId is not null) uploaded</dd>
                     <dt>Feed checked</dt>
                     <dd>@Format.Ago(_sub.LastPolledAt, Time.GetUtcNow())</dd>
-                    <dt>Status</dt>
+                    <dt>Last sync</dt>
                     <dd>
-                        @if (!_sub.Enabled) { <span class="badge none">Disabled</span> }
-                        else if (_sub.LastError is not null) { <span class="badge err">Error</span> <span>@_sub.LastError</span> }
-                        else { <span class="badge ok">OK</span> }
+                        @Format.Ago(_sub.LastSyncedAt, Time.GetUtcNow())
+                        @if (_sub.LastSyncResult is { } result) { <span class="badge after @BadgeClass(result)">@result</span> }
                     </dd>
+                    <dt>Next sync</dt>
+                    <dd>
+                        @if (_next is null) { <span>—</span> }
+                        else if (_next.PausedReason is not null) { <span class="muted">@_next.PausedReason</span> }
+                        else
+                        {
+                            <span title="@Format.Local(_next.At)">@Format.Until(_next.At, Time.GetUtcNow())</span>
+                            <span class="muted"> · every @Format.Interval(_next.Interval)@(_sub.PollInterval is null ? " (default)" : "")</span>
+                        }
+                    </dd>
+                    @if (_sub.LastError is not null)
+                    {
+                        <dt>Error</dt><dd class="err-text">@_sub.LastError</dd>
+                    }
                 </dl>
                 <div class="row">
-                    <button @onclick="PollAsync" disabled="@_busy">Check feed now</button>
+                    <button class="primary" @onclick="SyncNow" disabled="@(_activity is not null)">Sync now</button>
+                    <button @onclick="DryRunAsync" disabled="@(_activity is not null)">Dry run</button>
+                    <button @onclick="PollAsync" disabled="@(_busy || _activity is not null)">Check feed only</button>
                     <button @onclick="() => _editing = !_editing">@(_editing ? "Close settings" : "Settings")</button>
                 </div>
-                @if (_message is not null)
+                @if (_activity is not null)
+                {
+                    <div class="toast"><span class="spinner"></span> @_activity</div>
+                }
+                else if (_message is not null)
                 {
                     <div class="toast">@_message</div>
                 }
@@ -65,7 +98,14 @@ else
                     <button type="button" class="danger" @onclick="() => _confirmDelete = true">Delete subscription</button>
                 }
             </SubscriptionSettingsForm>
-            <p class="muted">Deleting removes the subscription and its episode history here. The Yoto playlist is left untouched.</p>
+            @if (_sub.YotoCardId is not null)
+            {
+                <p class="row" style="margin-top:1rem">
+                    <button type="button" @onclick="DetachAsync">Detach playlist @_sub.YotoCardId</button>
+                    <span class="muted">Next sync creates a new playlist. The existing one is left as-is in Yoto.</span>
+                </p>
+            }
+            <p class="muted">Deleting removes the subscription and its history here. The Yoto playlist is left untouched.</p>
         </section>
     }
 
@@ -73,27 +113,34 @@ else
         <div class="row" style="justify-content:space-between">
             <h2>Episodes</h2>
             <div class="row">
-                <input class="text" style="width:16rem" placeholder="Filter…" @bind="_filter" @bind:event="oninput" />
-                <label class="row"><input type="checkbox" @bind="_favouritesOnly" /> Favourites only</label>
+                <input class="text" style="width:14rem" placeholder="Filter…" @bind="_filter" @bind:event="oninput" />
+                <label class="row"><input type="checkbox" @bind="_favouritesOnly" /> Favourites</label>
+                <label class="row"><input type="checkbox" @bind="_plannedOnly" /> On playlist</label>
             </div>
         </div>
+        <p class="muted">
+            Playlist plan: @(_plan!.Episodes.Count) episodes (@_sub.RecentCount most recent + favourites, @(_sub.Order == PlaylistOrder.NewestFirst ? "newest" : "oldest") first).
+            @foreach (var w in _plan!.Warnings) { <span class="err-text"> @w</span> }
+        </p>
         <table class="eps">
             <thead>
-                <tr><th></th><th>Published</th><th>Title</th><th>Length</th><th></th></tr>
+                <tr><th></th><th title="Position on playlist">#</th><th>Published</th><th>Title</th><th>Length</th><th title="Uploaded to Yoto">Up</th></tr>
             </thead>
             <tbody>
                 @foreach (var e in VisibleEpisodes)
                 {
-                    <tr class="@(e.MissingFromFeedSince is null ? "" : "missing")" @key="e.Id">
+                    var pos = _positions.TryGetValue(e.Id, out var p) ? p : (int?)null;
+                    <tr class="@(e.MissingFromFeedSince is null ? "" : "missing") @(pos is null ? "" : "planned")" @key="e.Id">
                         <td>
                             <button class="star @(e.IsFavourite ? "on" : "")" title="@(e.IsFavourite ? "Unpin" : "Pin as favourite")"
                                     @onclick="() => ToggleFavouriteAsync(e)">@(e.IsFavourite ? "★" : "☆")</button>
                         </td>
+                        <td class="num">@pos</td>
                         <td class="num">@Format.Date(e.PublishedAt)</td>
                         <td>
                             @e.Title
-                            @if (e.EpisodeType is "bonus" or "trailer") { <span class="badge none">@e.EpisodeType</span> }
-                            @if (e.MissingFromFeedSince is not null) { <span class="badge warn" title="Since @Format.Local(e.MissingFromFeedSince)">not in feed</span> }
+                            @if (e.EpisodeType is "bonus" or "trailer") { <span class="badge after none">@e.EpisodeType</span> }
+                            @if (e.MissingFromFeedSince is not null) { <span class="badge after warn" title="Since @Format.Local(e.MissingFromFeedSince)">not in feed</span> }
                         </td>
                         <td class="num">@Format.Duration(e.DurationSeconds)</td>
                         <td>@(e.AudioId is null ? "" : "✓")</td>
@@ -102,20 +149,56 @@ else
             </tbody>
         </table>
     </section>
+
+    <section class="card">
+        <h2>Sync history</h2>
+        @if (_runs.Count == 0)
+        {
+            <p class="muted">No syncs yet.</p>
+        }
+        else
+        {
+            <table class="eps">
+                <thead><tr><th>Started</th><th>Trigger</th><th>Result</th><th>New</th><th>Uploaded</th><th>Details</th></tr></thead>
+                <tbody>
+                    @foreach (SyncRun run in _runs)
+                    {
+                        <tr>
+                            <td class="num">@Format.Local(run.StartedAt)</td>
+                            <td>@run.Trigger</td>
+                            <td><span class="badge @BadgeClass(run.Result)">@run.Result</span></td>
+                            <td class="num">@run.NewEpisodes</td>
+                            <td class="num">@run.Uploaded</td>
+                            <td>@run.Message</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
 }
 
 @code {
     [Parameter] public int Id { get; set; }
 
     private Subscription? _sub;
+    private PlannedPlaylist? _plan;
+    private NextSync? _next;
+    private Dictionary<int, int> _positions = new();
+    private IReadOnlyList<SyncRun> _runs = [];
     private SubscriptionSettings _settings = new();
-    private bool _notFound, _busy, _editing, _confirmDelete, _favouritesOnly;
+    private bool _notFound, _busy, _editing, _confirmDelete, _favouritesOnly, _plannedOnly;
     private string _filter = "";
-    private string? _message;
+    private string? _message, _activity;
 
     private IEnumerable<Episode> VisibleEpisodes => _sub!.Episodes
         .Where(e => !_favouritesOnly || e.IsFavourite)
+        .Where(e => !_plannedOnly || _positions.ContainsKey(e.Id))
         .Where(e => string.IsNullOrWhiteSpace(_filter) || e.Title.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+
+    protected override void OnInitialized() => Activity.Changed += OnActivityChanged;
+
+    public void Dispose() => Activity.Changed -= OnActivityChanged;
 
     protected override Task OnParametersSetAsync() => LoadAsync();
 
@@ -123,7 +206,44 @@ else
     {
         _sub = await Subscriptions.GetAsync(Id);
         _notFound = _sub is null;
-        if (_sub is not null) _settings = SubscriptionSettings.From(_sub);
+        _activity = Activity.Get(Id);
+        if (_sub is null) return;
+
+        _settings = SubscriptionSettings.From(_sub);
+        Replan();
+        _runs = await Subscriptions.GetRecentRunsAsync(Id);
+        _next = await Scheduler.GetNextSyncAsync(Id);
+    }
+
+    private void Replan()
+    {
+        _plan = PlaylistPlanner.Plan(_sub!, _sub!.Episodes);
+        _positions = _plan.Episodes.Select((e, i) => (e.Id, i + 1)).ToDictionary(x => x.Id, x => x.Item2);
+    }
+
+    private void OnActivityChanged(int subscriptionId)
+    {
+        if (subscriptionId != Id) return;
+        _ = InvokeAsync(async () =>
+        {
+            var was = _activity;
+            _activity = Activity.Get(Id);
+            if (_activity is null && was is not null) await LoadAsync(); // sync finished: refresh everything
+            StateHasChanged();
+        });
+    }
+
+    private void SyncNow()
+    {
+        _message = Scheduler.RequestSync(Id) ? null : "A sync is already queued or running.";
+        _activity = Activity.Get(Id);
+    }
+
+    private async Task DryRunAsync()
+    {
+        var outcome = await Engine.SyncAsync(Id, SyncTrigger.Manual, dryRun: true);
+        _message = outcome.Message;
+        await LoadAsync();
     }
 
     private async Task PollAsync()
@@ -147,7 +267,7 @@ else
         try
         {
             await Subscriptions.UpdateSettingsAsync(Id, _settings);
-            _message = "Settings saved.";
+            _message = "Settings saved. They apply on the next sync.";
             _editing = false;
             await LoadAsync();
         }
@@ -161,6 +281,13 @@ else
         }
     }
 
+    private async Task DetachAsync()
+    {
+        await Subscriptions.ClearPlaylistAsync(Id);
+        _message = "Playlist detached. The next sync creates a new one.";
+        await LoadAsync();
+    }
+
     private async Task DeleteAsync()
     {
         await Subscriptions.DeleteAsync(Id);
@@ -171,6 +298,7 @@ else
     {
         var value = !e.IsFavourite;
         e.IsFavourite = value; // optimistic
+        Replan();
         try
         {
             await Subscriptions.SetFavouriteAsync(e.Id, value);
@@ -178,7 +306,16 @@ else
         catch (Exception ex)
         {
             e.IsFavourite = !value;
+            Replan();
             _message = $"Couldn't update favourite: {ex.Message}";
         }
     }
+
+    private static string BadgeClass(SyncResult r) => r switch
+    {
+        SyncResult.Updated or SyncResult.NoChange => "ok",
+        SyncResult.Failed => "err",
+        SyncResult.Running => "warn",
+        _ => "none",
+    };
 }

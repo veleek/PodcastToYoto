@@ -52,7 +52,7 @@ Fill in as spikes are run. Test playlist created 2026-10-04: `4OA8g` (2 newest e
 |---|---|---|
 | S1 | Update with `cardId` keeps the same playlist; linked physical card picks up changes without relinking? | API returns the same `cardId` on update (documented). Physical-card behaviour not tested; Ben is ~95% confident from experience that playlist edits apply without relinking. |
 | S2 | Hard limits on track count / total duration / size? Error shape when exceeded? | Existing 100-episode card: 78,678 s (21.9 h), 958 MB. Duration/size are not practical limits; 100-track cap unconfirmed. |
-| S3 | `user:content:manage offline_access` sufficient for list, upload, cover, create/update? | ✅ list, upload, transcode, cover upload and create all worked with these scopes. |
+| S3 | `user:content:manage offline_access` sufficient for list, upload, cover, create/update? | Mostly: list, upload, transcode, cover and create/update work. **But `GET /content/{cardId}` returns 403 unless `user:content:view` (or `family:library:view`) is granted explicitly**, even though the docs say manage includes view. Default scopes are now `user:content:view user:content:manage offline_access`. |
 | S4 | Dev portal accepts a non-loopback HTTPS redirect URI? | ✅ Portal accepted `https://yoto.example.com/auth/callback`. End-to-end flow untested until the service exists. |
 | S5 | Access token lifetime; refresh token rotates every refresh? | Access token ≈ 8 h. Refresh token rotates on every refresh (confirmed). |
 | S6 | Chapter/track icon required, or does the player show a default when omitted? | Optional. Player shows a default icon (crosshair with corner markers) when omitted. |

@@ -169,7 +169,8 @@ public sealed class SyncEngine(
                 if (needsUpload) run.Uploaded++;
                 entries.Add(new PlaylistEntry(e.Title, AudioPipeline.ToTranscoded(a)));
             }
-            catch (Exception ex) when (ex is HttpRequestException or YotoApiException or TimeoutException)
+            catch (Exception ex) when (ex is HttpRequestException or YotoApiException or TimeoutException
+                                       || (ex is TaskCanceledException && !ct.IsCancellationRequested))
             {
                 // One bad episode shouldn't block the rest of the playlist.
                 logger.LogWarning(ex, "Skipping '{Title}': audio unavailable", e.Title);
@@ -229,7 +230,13 @@ public sealed class SyncEngine(
         }
         catch (YotoApiException ex) when (ex.StatusCode == 404)
         {
-            throw new InvalidOperationException($"Yoto playlist {cardId} no longer exists. Clear the playlist in settings to create a new one.", ex);
+            throw new InvalidOperationException($"Yoto playlist {cardId} no longer exists. Detach it in settings to create a new one.", ex);
+        }
+        catch (YotoApiException ex) when (ex.StatusCode == 403)
+        {
+            // Without the current playlist we can't preserve its Yoto-side settings; refuse rather than overwrite them.
+            throw new InvalidOperationException(
+                $"Not allowed to read playlist {cardId} (needs the user:content:view scope). Reconnect Yoto on the dashboard to grant it. Nothing was published.", ex);
         }
 
         using (doc)

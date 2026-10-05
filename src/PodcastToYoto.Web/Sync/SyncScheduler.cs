@@ -6,6 +6,10 @@ using PodcastToYoto.Web.Options;
 
 namespace PodcastToYoto.Web.Sync;
 
+/// <param name="At">Approximate time of the next automatic sync (scheduler checks every minute); null when paused.</param>
+/// <param name="PausedReason">Why no automatic sync is scheduled, if applicable.</param>
+public sealed record NextSync(DateTimeOffset? At, TimeSpan Interval, string? PausedReason);
+
 /// <summary>
 /// Runs syncs: on startup (optional), whenever a subscription's poll interval has elapsed, and on demand ("Sync now").
 /// Syncs are serialized by <see cref="SyncEngine"/>.
@@ -28,6 +32,33 @@ public sealed class SyncScheduler(
         if (activity.IsBusy(subscriptionId)) return false;
         activity.Set(subscriptionId, "Queued…");
         return _requests.Writer.TryWrite(subscriptionId);
+    }
+
+    /// <summary>When the scheduler will next sync this subscription (same rule as <see cref="GetDueAsync"/>).</summary>
+    public async Task<NextSync> GetNextSyncAsync(int subscriptionId, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var defaultInterval = options.CurrentValue.DefaultPollInterval;
+
+        var s = await db.Subscriptions.AsNoTracking()
+            .Where(x => x.Id == subscriptionId)
+            .Select(x => new { x.Enabled, x.PollInterval })
+            .SingleOrDefaultAsync(ct);
+        if (s is null) return new NextSync(null, defaultInterval, "Not found");
+
+        var interval = s.PollInterval ?? defaultInterval;
+        if (!s.Enabled) return new NextSync(null, interval, "Disabled: manual sync only");
+
+        var account = await db.YotoAccounts.AsNoTracking().SingleOrDefaultAsync(ct);
+        if (account?.Status != AccountStatus.Connected) return new NextSync(null, interval, "Paused until Yoto is connected");
+
+        var starts = await db.SyncRuns.AsNoTracking()
+            .Where(r => r.SubscriptionId == subscriptionId && r.Result != SyncResult.DryRun)
+            .Select(r => r.StartedAt)
+            .ToListAsync(ct);
+
+        var at = starts.Count == 0 ? time.GetUtcNow() : starts.Max() + interval;
+        return new NextSync(at, interval, null);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

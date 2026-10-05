@@ -2,6 +2,7 @@
 @inject YotoAccountService Account
 @inject SubscriptionService Subscriptions
 @inject TimeProvider Time
+@inject SyncScheduler Scheduler
 @inject NavigationManager Nav
 
 <PageTitle>Podcast → Yoto</PageTitle>
@@ -35,6 +36,13 @@
                     break;
             }
         </div>
+
+        @if (_status.MissingScopes.Count > 0)
+        {
+            <div class="alert" style="margin-top:.75rem">
+                Missing permission(s): <code>@(string.Join(" ", _status.MissingScopes))</code>. Click <strong>Reconnect</strong> to grant them.
+            </div>
+        }
 
         @if (_status.Status != AccountStatus.Disconnected)
         {
@@ -100,7 +108,7 @@
                     @if (s.CoverSourceUrl is not null) { <img src="@s.CoverSourceUrl" alt="" /> }
                     <div class="grow">
                         <div><strong>@s.Name</strong></div>
-                        <div class="muted">@s.EpisodeCount episodes · @s.FavouriteCount favourites · feed checked @Format.Ago(s.LastPolledAt, Time.GetUtcNow())</div>
+                        <div class="muted">@s.EpisodeCount episodes · @s.FavouriteCount favourites · synced @Format.Ago(s.LastSyncedAt, Time.GetUtcNow()) · next @NextText(s.Id)@(s.YotoCardId is null ? "" : $" · playlist {s.YotoCardId}")</div>
                     </div>
                     @if (!s.Enabled) { <span class="badge none">Disabled</span> }
                     else if (s.LastError is not null) { <span class="badge err" title="@s.LastError">Error</span> }
@@ -124,7 +132,15 @@
     {
         _status = await Account.GetStatusAsync();
         _subs = await Subscriptions.ListAsync();
+        foreach (var sub in _subs) _next[sub.Id] = await Scheduler.GetNextSyncAsync(sub.Id);
     }
+
+    private readonly Dictionary<int, NextSync> _next = new();
+
+    private string NextText(int id) =>
+        !_next.TryGetValue(id, out var n) ? "—"
+        : n.PausedReason is not null ? n.PausedReason.ToLowerInvariant()
+        : Format.Until(n.At, Time.GetUtcNow());
 
     // Full page load: /auth/login is a server endpoint, not a Blazor route.
     private void Connect() => Nav.NavigateTo("/auth/login", forceLoad: true);

@@ -2,7 +2,7 @@
 
 Keeps Yoto Make-Your-Own playlists in sync with podcast RSS feeds. Built first for *Silly Stories for Kids*.
 
-Status: **M2 (subscriptions + feeds) written; M1 done**. See [docs/requirements.md](docs/requirements.md), [docs/design.md](docs/design.md), [docs/spikes.md](docs/spikes.md).
+Status: **M1–M3 done (end-to-end sync works); M4 curation + M5 deploy next**. See [docs/requirements.md](docs/requirements.md), [docs/design.md](docs/design.md), [docs/spikes.md](docs/spikes.md).
 
 ## Layout
 
@@ -41,7 +41,7 @@ dotnet run --project src/PodcastToYoto.Web --launch-profile http
 | `App:PublicBaseUrl` | (required) | e.g. `https://yoto.example.com` |
 | `App:DataDirectory` | `/data` | relative paths resolve against the content root |
 | `Yoto:ClientId` | (required) | user-secrets in dev, `Yoto__ClientId` env var in the container |
-| `Yoto:Scopes` | `user:content:manage offline_access` | |
+| `Yoto:Scopes` | `user:content:view user:content:manage offline_access` | `view` is needed explicitly for `GET /content/{id}` |
 | `Sync:DefaultPollInterval` | `01:00:00` | |
 | `Sync:RunOnStartup` | `true` | |
 | `Sync:DryRun` | `false` | |
