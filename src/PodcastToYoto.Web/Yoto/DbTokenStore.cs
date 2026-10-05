@@ -17,11 +17,20 @@ public sealed class DbTokenStore(IDbContextFactory<AppDbContext> dbFactory, IDat
         if (a is not { Status: AccountStatus.Connected, ProtectedAccessToken: not null, ProtectedRefreshToken: not null, ExpiresAt: not null })
             return null;
 
-        return new YotoTokens(
-            _protector.Unprotect(a.ProtectedAccessToken),
-            _protector.Unprotect(a.ProtectedRefreshToken),
-            a.ExpiresAt.Value,
-            a.Scope);
+        try
+        {
+            return new YotoTokens(
+                _protector.Unprotect(a.ProtectedAccessToken),
+                _protector.Unprotect(a.ProtectedRefreshToken),
+                a.ExpiresAt.Value,
+                a.Scope);
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            // Data Protection keys changed (e.g. DB copied to a new host without data/keys): tokens are unreadable.
+            await MarkInvalidAsync("Stored tokens can't be decrypted (Data Protection keys changed). Reconnect Yoto.", ct);
+            return null;
+        }
     }
 
     public async Task SaveAsync(YotoTokens tokens, CancellationToken ct = default)

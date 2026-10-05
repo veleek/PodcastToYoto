@@ -17,26 +17,32 @@
         <InputText @bind-Value="Model.TitleOverride" />
     </label>
 
+    @* Each label is caption / control / message; the grid lines these up across columns (CSS subgrid)
+       so a validation message under one field doesn't push its neighbours out of line. *@
     <div class="grid2">
-        <label>Recent episodes to keep
-            <InputNumber @bind-Value="Model.RecentCount" min="1" max="100" />
+        <label>
+            <span class="cap">Recent episodes to keep</span>
+            <InputNumber @bind-Value="Model.RecentCount" min="1" max="100" ParsingErrorMessage="Enter a whole number." />
             <ValidationMessage For="() => Model.RecentCount" />
         </label>
 
-        <label>Max tracks on card
-            <InputNumber @bind-Value="Model.MaxTracks" min="1" max="100" />
+        <label>
+            <span class="cap">Max tracks on card</span>
+            <InputNumber @bind-Value="Model.MaxTracks" min="1" max="100" ParsingErrorMessage="Enter a whole number." />
             <ValidationMessage For="() => Model.MaxTracks" />
         </label>
 
-        <label>Order
+        <label>
+            <span class="cap">Order</span>
             <InputSelect @bind-Value="Model.Order">
                 <option value="@PlaylistOrder.NewestFirst">Newest first</option>
                 <option value="@PlaylistOrder.OldestFirst">Oldest first</option>
             </InputSelect>
         </label>
 
-        <label>Sync interval (minutes) <span class="muted">(blank = default: every @Format.Interval(SyncOptions.CurrentValue.DefaultPollInterval))</span>
-            <InputNumber @bind-Value="Model.PollIntervalMinutes" min="5" placeholder="@((int)SyncOptions.CurrentValue.DefaultPollInterval.TotalMinutes)" />
+        <label>
+            <span class="cap">Sync interval (minutes) <span class="muted">(blank = default: every @Format.Interval(SyncOptions.CurrentValue.DefaultPollInterval))</span></span>
+            <InputNumber @bind-Value="Model.PollIntervalMinutes" min="5" placeholder="@((int)SyncOptions.CurrentValue.DefaultPollInterval.TotalMinutes)" ParsingErrorMessage="Enter a whole number of minutes, or leave blank." />
             <ValidationMessage For="() => Model.PollIntervalMinutes" />
         </label>
     </div>

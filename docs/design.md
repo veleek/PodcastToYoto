@@ -128,7 +128,7 @@ Dev: `launchSettings.json` binds `http://0.0.0.0:5164`. Container: listens on 80
 2. **M2 Feeds** ✅ *(2026-10-05)*: subscription CRUD, feed preview, polling + episode upsert, episodes table.
 3. **M3 Sync** ✅ *(2026-10-05)*: planner, audio pipeline, publish, scheduler, Sync now, sync history. *End-to-end usable here.*
 4. **M4 Curation** ✅ *(2026-10-05)*: favourites (+ clear all); target an existing playlist (picker on create and in settings) — its tracks are matched to feed episodes by normalised title so their audio is reused, optionally kept as favourites, and automatic sync is paused until reviewed; playlist links open the card in the Yoto web app; planned-playlist preview; export/import JSON (`/export.json`, `/settings`).
-5. **M5 Deploy**: Dockerfile (non-root, `/data` volume), compose snippet, GHCR build via GitHub Actions.
+5. **M5 Deploy** *(written 2026-10-05)*: multi-stage Dockerfile (non-root, `/data` volume, port 8080), `deploy/compose.yaml` (included from the server's parent services compose; shared `services` network, Traefik labels + PocketID middleware, explicit DNS), `build.ps1` (test, build, optional tarball / local-registry push), GitHub Actions CI (build + test only; no image publishing).
 
 ## Later / ideas
 

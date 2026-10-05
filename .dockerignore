@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+.git/
+.vs/
+.idea/
+.data/
+.yoto-spike/
+tests/
+tools/
+docs/
+deploy/
+*.md
+**/*.user
+**/appsettings.Development.json
+**/appsettings.Local.json
+**/Properties/launchSettings.json

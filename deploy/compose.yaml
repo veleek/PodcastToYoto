@@ -1,0 +1,33 @@
+# PodcastToYoto on the home server, behind Traefik + PocketID (oidc_auth middleware).
+# Lives at ./yoto/compose.yaml and is pulled into the parent services compose file via `include:`.
+# Copy .env.example to .env and fill it in, then:
+#   mkdir -p data && sudo chown -R 1654:1654 data    # container runs as non-root UID 1654 (re-run after copying data in)
+#   docker compose up -d
+services:
+  podcast-to-yoto:
+    image: ${IMAGE:-podcast-to-yoto:latest}
+    container_name: podcast-to-yoto
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-America/Los_Angeles}
+      - App__PublicBaseUrl=https://${YOTO_HOST:?Set YOTO_HOST in .env}
+      - Yoto__ClientId=${YOTO_CLIENT_ID:?Set YOTO_CLIENT_ID in .env}
+      # - Sync__DefaultPollInterval=01:00:00
+      # - Sync__DryRun=true
+    volumes:
+      - ./data:/data
+    # No `ports:`: only reachable through Traefik on the shared network.
+    networks:
+      - services
+    # Containers on this host can't resolve external names via the default resolver; Docker's embedded
+    # DNS still handles container names and forwards everything else here.
+    dns:
+      - 1.1.1.1
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.yoto.rule=Host(`${YOTO_HOST}`)'
+      - 'traefik.http.routers.yoto.entrypoints=websecure'
+      - 'traefik.http.routers.yoto.tls.certResolver=lets-encrypt'
+      - 'traefik.http.routers.yoto.middlewares=oidc_auth@file'
+      # Port the app listens on inside the container.
+      - 'traefik.http.services.yoto.loadbalancer.server.port=8080'

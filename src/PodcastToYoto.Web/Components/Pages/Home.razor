@@ -104,11 +104,10 @@
         <div class="subs">
             @foreach (var s in _subs)
             {
-                @* div, not <a>: the row contains a link to the Yoto card and links can't nest *@
-                <div class="sub" role="link" tabindex="0" @onclick="() => Open(s.Id)">
+                <div class="sub">
                     @if (s.CoverSourceUrl is not null) { <img src="@s.CoverSourceUrl" alt="" /> }
                     <div class="grow">
-                        <div><strong>@s.Name</strong></div>
+                        <div><a class="stretch" href="/subscriptions/@s.Id"><strong>@s.Name</strong></a></div>
                         <div class="muted">@s.EpisodeCount episodes · @s.FavouriteCount favourites · synced @Format.Ago(s.LastSyncedAt, Time.GetUtcNow()) · next @NextText(s.Id)
                             @if (s.YotoCardId is not null) { <span>· playlist </span><CardLink CardId="@s.YotoCardId" Title="@s.PlaylistTitle" /> }
                         </div>
@@ -139,8 +138,6 @@
     }
 
     private readonly Dictionary<int, NextSync> _next = new();
-
-    private void Open(int id) => Nav.NavigateTo($"/subscriptions/{id}");
 
     private string NextText(int id) =>
         !_next.TryGetValue(id, out var n) ? "—"

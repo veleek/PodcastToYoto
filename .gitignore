@@ -10,6 +10,8 @@ obj/
 /.yoto-spike/
 /.data/
 *.env
+deploy/.env
+deploy/data/
 appsettings.Local.json
 tokens*.json
 *.db

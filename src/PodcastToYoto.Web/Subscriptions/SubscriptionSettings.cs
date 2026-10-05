@@ -17,10 +17,10 @@ public sealed class SubscriptionSettings
     [StringLength(200)]
     public string? TitleOverride { get; set; }
 
-    [Range(1, 100)]
+    [Range(1, 100, ErrorMessage = "Between 1 and 100.")]
     public int RecentCount { get; set; } = 25;
 
-    [Range(1, 100)]
+    [Range(1, 100, ErrorMessage = "Between 1 and 100 (Yoto's track limit).")]
     public int MaxTracks { get; set; } = 100;
 
     public PlaylistOrder Order { get; set; } = PlaylistOrder.NewestFirst;
@@ -28,7 +28,7 @@ public sealed class SubscriptionSettings
     public bool IncludeTrailers { get; set; }
 
     /// <summary>Null → global default.</summary>
-    [Range(5, 24 * 60)]
+    [Range(5, 24 * 60, ErrorMessage = "Between 5 and 1440 minutes.")]
     public int? PollIntervalMinutes { get; set; }
 
     public static SubscriptionSettings From(Subscription s) => new()
