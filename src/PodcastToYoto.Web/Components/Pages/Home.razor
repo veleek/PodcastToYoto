@@ -1,0 +1,129 @@
+@page "/"
+@using PodcastToYoto.Web.Data
+@inject YotoAccountService Account
+@inject NavigationManager Nav
+
+<PageTitle>Podcast → Yoto</PageTitle>
+
+<h1 class="muted" style="font-size:1.1rem;font-weight:500">Dashboard</h1>
+
+@if (!string.IsNullOrEmpty(AuthError))
+{
+    <div class="alert">Yoto login failed: @AuthError</div>
+}
+
+<section class="card">
+    <h2>Yoto account</h2>
+    @if (_status is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <div class="row">
+            @switch (_status.Status)
+            {
+                case AccountStatus.Connected:
+                    <span class="badge ok">Connected</span>
+                    break;
+                case AccountStatus.NeedsReauth:
+                    <span class="badge err">Needs re-login</span>
+                    break;
+                default:
+                    <span class="badge none">Not connected</span>
+                    break;
+            }
+        </div>
+
+        @if (_status.Status != AccountStatus.Disconnected)
+        {
+            <dl class="kv">
+                <dt>Connected</dt><dd>@Local(_status.ConnectedAt)</dd>
+                <dt>Access token expires</dt><dd>@Local(_status.ExpiresAt)</dd>
+                <dt>Scopes</dt><dd>@_status.Scope</dd>
+                @if (!string.IsNullOrEmpty(_status.LastError))
+                {
+                    <dt>Last error</dt><dd>@_status.LastError</dd>
+                }
+            </dl>
+        }
+
+        <div class="row">
+            @if (_status.Status == AccountStatus.Connected)
+            {
+                <button @onclick="TestAsync" disabled="@_busy">Test connection</button>
+                <button @onclick="Connect" disabled="@_busy">Reconnect</button>
+                <button @onclick="DisconnectAsync" disabled="@_busy">Disconnect</button>
+            }
+            else
+            {
+                <button class="primary" @onclick="Connect">Connect Yoto account</button>
+            }
+        </div>
+
+        @if (_test is not null)
+        {
+            <p class="@(_test.Ok ? "" : "alert")" style="margin-top:.75rem">@_test.Message</p>
+            @if (_test.Playlists.Count > 0)
+            {
+                <ul class="plain">
+                    @foreach (var p in _test.Playlists.OrderByDescending(p => p.UpdatedAt))
+                    {
+                        <li><code>@p.CardId</code> @p.Title <span class="muted">— updated @Local(p.UpdatedAt)</span></li>
+                    }
+                </ul>
+            }
+        }
+    }
+</section>
+
+<section class="card">
+    <h2>Subscriptions</h2>
+    <p class="muted">Coming in M2.</p>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "authError")]
+    public string? AuthError { get; set; }
+
+    private YotoAccountStatus? _status;
+    private YotoConnectionTest? _test;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => _status = await Account.GetStatusAsync();
+
+    // Full page load: /auth/login is a server endpoint, not a Blazor route.
+    private void Connect() => Nav.NavigateTo("/auth/login", forceLoad: true);
+
+    private async Task TestAsync()
+    {
+        _busy = true;
+        try
+        {
+            _test = await Account.TestConnectionAsync();
+            _status = await Account.GetStatusAsync(); // refresh may have rotated tokens / flagged re-auth
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DisconnectAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Account.DisconnectAsync();
+            _test = null;
+            _status = await Account.GetStatusAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string Local(DateTimeOffset? value) =>
+        value is null ? "—" : value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+}

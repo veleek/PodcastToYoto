@@ -1,0 +1,17 @@
+# Build output
+bin/
+obj/
+*.user
+.vs/
+.idea/
+*.swp
+
+# Local state / secrets (runtime data lives outside src/; see App:DataDirectory)
+/.yoto-spike/
+/.data/
+*.env
+appsettings.Local.json
+tokens*.json
+*.db
+*.db-shm
+*.db-wal
