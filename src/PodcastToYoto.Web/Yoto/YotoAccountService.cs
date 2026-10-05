@@ -63,6 +63,10 @@ public sealed class YotoAccountService(
         }
     }
 
+    /// <summary>The user's MYO playlists, most recently updated first. Throws on auth/API errors.</summary>
+    public async Task<IReadOnlyList<YotoCardSummary>> ListPlaylistsAsync(CancellationToken ct = default) =>
+        (await api.GetMyContentAsync(ct)).OrderByDescending(c => c.UpdatedAt).ToList();
+
     public async Task DisconnectAsync(CancellationToken ct = default)
     {
         await tokens.ClearAsync(ct);

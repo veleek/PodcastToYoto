@@ -1,0 +1,86 @@
+@using System.Text.Json
+@using PodcastToYoto.Yoto
+@inject YotoAccountService Account
+@inject SubscriptionService Subscriptions
+
+@if (_error is not null)
+{
+    <div class="alert">Couldn't load Yoto playlists: @_error</div>
+}
+else if (_playlists is null)
+{
+    <p class="muted">Loading Yoto playlists…</p>
+}
+else
+{
+    <div class="picker">
+        <label class="pick @(SelectedCardId is null ? "on" : "")">
+            <input type="radio" name="@_group" checked="@(SelectedCardId is null)" @onchange="() => SelectAsync(null)" />
+            <span class="grow"><strong>Create a new playlist</strong> <span class="muted">on the first sync</span></span>
+        </label>
+        @foreach (var p in _playlists)
+        {
+            var usedBy = _usage.GetValueOrDefault(p.CardId);
+            <label class="pick @(SelectedCardId == p.CardId ? "on" : "")">
+                <input type="radio" name="@_group" checked="@(SelectedCardId == p.CardId)" @onchange="() => SelectAsync(p.CardId)" />
+                <span class="grow">
+                    <CardLink CardId="@p.CardId" Title="@p.Title" />
+                    <span class="muted"> · @Format.Duration(Duration(p)) · updated @Format.Date(p.UpdatedAt)</span>
+                    @if (usedBy is not null) { <span class="badge after warn">used by “@usedBy”</span> }
+                </span>
+            </label>
+        }
+    </div>
+
+    @if (SelectedCardId is not null)
+    {
+        <div class="toast" style="margin-top:.75rem">
+            ⚠ Every sync <strong>replaces this playlist's tracks</strong> (and cover). Its name and settings such as resume timeout are kept.
+            Episodes that match its current tracks reuse the audio already on Yoto, so they aren't uploaded again.
+            Automatic syncing stays paused until you've reviewed the plan and re-enabled it.
+            <label class="row" style="margin-top:.5rem">
+                <input type="checkbox" checked="@KeepAsFavourites" @onchange="e => KeepAsFavouritesChanged.InvokeAsync((bool)e.Value!)" />
+                Keep its current tracks on the card (matching episodes become favourites)
+            </label>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? SelectedCardId { get; set; }
+    [Parameter] public EventCallback<string?> SelectedCardIdChanged { get; set; }
+    [Parameter] public bool KeepAsFavourites { get; set; }
+    [Parameter] public EventCallback<bool> KeepAsFavouritesChanged { get; set; }
+
+    /// <summary>Subscription being edited (its own playlist isn't flagged as "used by").</summary>
+    [Parameter] public int? CurrentSubscriptionId { get; set; }
+
+    private readonly string _group = $"pl-{Guid.NewGuid():N}";
+    private IReadOnlyList<YotoCardSummary>? _playlists;
+    private Dictionary<string, string> _usage = new();
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _playlists = await Account.ListPlaylistsAsync();
+            _usage = (await Subscriptions.ListAsync())
+                .Where(s => s.YotoCardId is not null && s.Id != CurrentSubscriptionId)
+                .GroupBy(s => s.YotoCardId!)
+                .ToDictionary(g => g.Key, g => string.Join(", ", g.Select(s => s.Name)));
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private Task SelectAsync(string? cardId) => SelectedCardIdChanged.InvokeAsync(cardId);
+
+    private static long? Duration(YotoCardSummary p) =>
+        p.Raw.TryGetProperty("metadata", out var md) && md.TryGetProperty("media", out var m)
+        && m.TryGetProperty("duration", out var d) && d.ValueKind == JsonValueKind.Number
+            ? (long)d.GetDouble()
+            : null;
+}

@@ -2,6 +2,8 @@
 @implements IDisposable
 @inject SubscriptionService Subscriptions
 @inject SyncScheduler Scheduler
+@inject PlaylistAdopter Adopter
+@inject SubscriptionNotices Notices
 @inject SyncEngine Engine
 @inject SyncActivity Activity
 @inject NavigationManager Nav
@@ -37,8 +39,7 @@ else
                         }
                         else
                         {
-                            <code>@_sub.YotoCardId</code>
-                            <span> “@(_sub.TitleOverride ?? _sub.Name)”</span>
+                            <CardLink CardId="@_sub.YotoCardId" Title="@(_sub.TitleOverride ?? _sub.Name)" />
                         }
                     </dd>
                     <dt>Episodes</dt>
@@ -98,24 +99,54 @@ else
                     <button type="button" class="danger" @onclick="() => _confirmDelete = true">Delete subscription</button>
                 }
             </SubscriptionSettingsForm>
-            @if (_sub.YotoCardId is not null)
+            <p class="muted">Deleting removes the subscription and its history here. The Yoto playlist is left untouched.</p>
+        </section>
+
+        <section class="card">
+            <h2>Yoto playlist</h2>
+            @if (_changingPlaylist)
             {
-                <p class="row" style="margin-top:1rem">
-                    <button type="button" @onclick="DetachAsync">Detach playlist @_sub.YotoCardId</button>
-                    <span class="muted">Next sync creates a new playlist. The existing one is left as-is in Yoto.</span>
+                <PlaylistPicker @bind-SelectedCardId="_pickCardId" @bind-KeepAsFavourites="_pickKeep" CurrentSubscriptionId="Id" />
+                <div class="row" style="margin-top:.75rem">
+                    <button class="primary" disabled="@(_busy || _pickCardId == _sub.YotoCardId)" @onclick="ApplyPlaylistAsync">
+                        @(_pickCardId is null ? "Create a new playlist on next sync" : "Use this playlist")
+                    </button>
+                    <button @onclick="() => _changingPlaylist = false">Cancel</button>
+                </div>
+            }
+            else
+            {
+                <p class="row">
+                    @if (_sub.YotoCardId is null)
+                    {
+                        <span>None yet. A new playlist is created on the next sync.</span>
+                    }
+                    else
+                    {
+                        <span>Syncing to <CardLink CardId="@_sub.YotoCardId" Title="@(_sub.TitleOverride ?? _sub.Name)" /></span>
+                    }
+                    <button type="button" @onclick="StartChangePlaylist">Change playlist…</button>
                 </p>
             }
-            <p class="muted">Deleting removes the subscription and its history here. The Yoto playlist is left untouched.</p>
         </section>
     }
 
     <section class="card">
-        <div class="row" style="justify-content:space-between">
+        <div class="row card-head">
             <h2>Episodes</h2>
             <div class="row">
                 <input class="text" style="width:14rem" placeholder="Filter…" @bind="_filter" @bind:event="oninput" />
                 <label class="row"><input type="checkbox" @bind="_favouritesOnly" /> Favourites</label>
                 <label class="row"><input type="checkbox" @bind="_plannedOnly" /> On playlist</label>
+                @if (_confirmClearFavs)
+                {
+                    <button class="danger" @onclick="ClearFavouritesAsync">Clear all favourites?</button>
+                    <button @onclick="() => _confirmClearFavs = false">Cancel</button>
+                }
+                else if (_sub.Episodes.Any(e => e.IsFavourite))
+                {
+                    <button @onclick="() => _confirmClearFavs = true">Clear favourites</button>
+                }
             </div>
         </div>
         <p class="muted">
@@ -187,7 +218,10 @@ else
     private Dictionary<int, int> _positions = new();
     private IReadOnlyList<SyncRun> _runs = [];
     private SubscriptionSettings _settings = new();
-    private bool _notFound, _busy, _editing, _confirmDelete, _favouritesOnly, _plannedOnly;
+    private bool _notFound, _busy, _editing, _confirmDelete, _favouritesOnly, _plannedOnly, _changingPlaylist;
+    private string? _pickCardId;
+    private bool _confirmClearFavs;
+    private bool _pickKeep;
     private string _filter = "";
     private string? _message, _activity;
 
@@ -200,7 +234,11 @@ else
 
     public void Dispose() => Activity.Changed -= OnActivityChanged;
 
-    protected override Task OnParametersSetAsync() => LoadAsync();
+    protected override Task OnParametersSetAsync()
+    {
+        _message = Notices.Take(Id) ?? _message;
+        return LoadAsync();
+    }
 
     private async Task LoadAsync()
     {
@@ -274,6 +312,48 @@ else
         catch (Exception ex)
         {
             _message = $"Save failed: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ClearFavouritesAsync()
+    {
+        var n = await Subscriptions.ClearFavouritesAsync(Id);
+        _confirmClearFavs = false;
+        _message = $"Cleared {n} favourite(s). Applies on the next sync.";
+        await LoadAsync();
+    }
+
+    private void StartChangePlaylist()
+    {
+        _pickCardId = _sub!.YotoCardId;
+        _pickKeep = false;
+        _changingPlaylist = true;
+    }
+
+    private async Task ApplyPlaylistAsync()
+    {
+        if (_pickCardId is null)
+        {
+            await DetachAsync();
+            _changingPlaylist = false;
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Adopter.AttachAsync(Id, _pickCardId, _pickKeep);
+            _message = result.Describe();
+            _changingPlaylist = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = $"Couldn't attach playlist: {ex.Message}";
         }
         finally
         {

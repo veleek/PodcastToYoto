@@ -1,0 +1,142 @@
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using PodcastToYoto.Web.Data;
+using PodcastToYoto.Yoto;
+
+namespace PodcastToYoto.Web.Subscriptions;
+
+public sealed record AdoptResult(bool KeptAsFavourites, int Tracks, int Matched, int NewFavourites, int ReusedAudio, IReadOnlyList<string> Unmatched)
+{
+    public string Describe()
+    {
+        var head = Tracks == 0 ? "Playlist attached (it was empty)."
+            : KeptAsFavourites
+                ? $"Playlist attached. {Matched}/{Tracks} existing tracks matched to episodes and kept as favourites ({NewFavourites} new), " +
+                  $"{ReusedAudio} reuse their existing Yoto audio." +
+                  (Unmatched.Count == 0 ? "" : $" Not matched (will be removed on next sync): {string.Join(", ", Unmatched)}.")
+                : $"Playlist attached. Its {Tracks} existing tracks will be replaced by the planned episodes; " +
+                  $"{ReusedAudio} matched episodes reuse audio already on Yoto (no re-upload).";
+        return head + " Automatic syncing is paused for this subscription: check the plan with Dry run, then Sync now, then re-enable it in Settings.";
+    }
+}
+
+/// <summary>
+/// Points a subscription at an existing Yoto playlist. Its current tracks are matched to feed episodes so their audio is
+/// reused (no re-upload); optionally the matches also become favourites so they stay on the card.
+/// </summary>
+public sealed class PlaylistAdopter(
+    IDbContextFactory<AppDbContext> dbFactory,
+    YotoApiClient yoto,
+    TimeProvider time,
+    ILogger<PlaylistAdopter> logger)
+{
+    public async Task<AdoptResult> AttachAsync(int subscriptionId, string cardId, bool keepAsFavourites, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var s = await db.Subscriptions.Include(x => x.Episodes).ThenInclude(e => e.Audio).SingleAsync(x => x.Id == subscriptionId, ct);
+
+        using var doc = await yoto.GetContentAsync(cardId, ct);
+        var card = doc.RootElement.TryGetProperty("card", out var c) ? c : doc.RootElement;
+
+        s.YotoCardId = cardId;
+        s.LastPublishedHash = null; // force a publish on next sync
+
+        // An existing playlist is about to be overwritten: don't let the scheduler do that before the user has
+        // reviewed the plan. They re-enable automatic syncing in Settings.
+        s.Enabled = false;
+
+        // Keep the playlist's current name unless the user already chose one.
+        var existingTitle = Str(card, "title");
+        if (s.TitleOverride is null && !string.IsNullOrWhiteSpace(existingTitle) && existingTitle != s.Name)
+            s.TitleOverride = existingTitle;
+
+        var result = await AdoptTracksAsync(db, s, card, keepAsFavourites, ct);
+
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("Subscription {Id} attached to playlist {CardId}: {Result}", subscriptionId, cardId, result.Describe());
+        return result;
+    }
+
+    private async Task<AdoptResult> AdoptTracksAsync(AppDbContext db, Subscription s, JsonElement card, bool keepAsFavourites, CancellationToken ct)
+    {
+        var candidates = s.Episodes
+            .OrderByDescending(e => e.PublishedAt ?? DateTimeOffset.MinValue)
+            .Select(e => (TrackMatcher.Normalize(e.Title), e))
+            .ToList();
+
+        int tracks = 0, matched = 0, newFavs = 0, reused = 0;
+        var unmatched = new List<string>();
+
+        foreach (var track in EnumerateTracks(card))
+        {
+            tracks++;
+            var ep = TrackMatcher.Match(track.Title, candidates);
+            if (ep is null)
+            {
+                unmatched.Add(track.Title ?? "(untitled)");
+                continue;
+            }
+
+            matched++;
+            if (keepAsFavourites && !ep.IsFavourite)
+            {
+                ep.IsFavourite = true;
+                newFavs++;
+            }
+
+            if (ep.AudioId is null && ep.Audio is null && track.Sha is not null)
+            {
+                ep.Audio = await db.Audio.SingleOrDefaultAsync(a => a.TranscodedSha256 == track.Sha, ct)
+                    ?? db.Audio.Local.SingleOrDefault(a => a.TranscodedSha256 == track.Sha)
+                    ?? db.Audio.Add(new Audio
+                    {
+                        // Source file unknown (uploaded outside this app); key it by the transcoded hash instead.
+                        SourceSha256 = $"yoto:{track.Sha}",
+                        TranscodedSha256 = track.Sha,
+                        DurationSeconds = track.Duration,
+                        FileSize = track.FileSize,
+                        ChannelsJson = track.ChannelsJson,
+                        FormatJson = track.FormatJson,
+                        UploadedAt = time.GetUtcNow(),
+                    }).Entity;
+                reused++;
+            }
+        }
+
+        return new AdoptResult(keepAsFavourites, tracks, matched, newFavs, reused, unmatched);
+    }
+
+    private sealed record ExistingTrack(string? Title, string? Sha, long? Duration, long? FileSize, string? ChannelsJson, string? FormatJson);
+
+    private static IEnumerable<ExistingTrack> EnumerateTracks(JsonElement card)
+    {
+        if (!card.TryGetProperty("content", out var content) || !content.TryGetProperty("chapters", out var chapters)
+            || chapters.ValueKind != JsonValueKind.Array)
+            yield break;
+
+        foreach (var ch in chapters.EnumerateArray())
+        {
+            var chapterTitle = Str(ch, "title");
+            if (!ch.TryGetProperty("tracks", out var tracks) || tracks.ValueKind != JsonValueKind.Array) continue;
+
+            foreach (var t in tracks.EnumerateArray())
+            {
+                var url = Str(t, "trackUrl");
+                var sha = url is not null && url.StartsWith("yoto:#", StringComparison.Ordinal) ? url["yoto:#".Length..] : null;
+                yield return new ExistingTrack(
+                    Str(t, "title") ?? chapterTitle,
+                    sha,
+                    Num(t, "duration"),
+                    Num(t, "fileSize"),
+                    t.TryGetProperty("channels", out var chn) ? chn.GetRawText() : null,
+                    t.TryGetProperty("format", out var fmt) ? fmt.GetRawText() : null);
+            }
+        }
+    }
+
+    private static string? Str(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static long? Num(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? (long)Math.Round(v.GetDouble()) : null;
+}

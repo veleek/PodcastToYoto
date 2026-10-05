@@ -50,8 +50,8 @@ button.star { border: none; background: none; font-size: 1.4rem; line-height: 1;
 button.star.on { color: #e0a800; }
 .toast { padding: .5rem .8rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); margin: .5rem 0; }
 .subs { display: grid; gap: .5rem; }
-.subs a.sub { display: flex; gap: .75rem; align-items: center; padding: .6rem; border: 1px solid var(--border); border-radius: 8px; color: inherit; text-decoration: none; }
-.subs a.sub:hover { border-color: var(--accent); }
+.subs .sub { cursor: pointer; display: flex; gap: .75rem; align-items: center; padding: .6rem; border: 1px solid var(--border); border-radius: 8px; color: inherit; text-decoration: none; }
+.subs .sub:hover { border-color: var(--accent); }
 .subs img { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; }
 .grow { flex: 1; min-width: 0; }
 .danger { border-color: var(--err); color: var(--err); }
@@ -61,3 +61,11 @@ table.eps tr.planned td:nth-child(2) { color: var(--accent); font-weight: 600; }
 @keyframes spin { to { transform: rotate(360deg); } }
 form.form input:not([type=checkbox]), form.form select { height: 2.3rem; }
 form.form select { padding-right: .75rem; }
+.picker { display: grid; gap: .35rem; }
+.picker label.pick { display: flex; gap: .6rem; align-items: center; padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.picker label.pick.on { border-color: var(--accent); }
+a.cardlink { color: var(--accent); font-weight: 600; text-decoration: none; }
+a.cardlink:hover { text-decoration: underline; }
+a.cardlink .ext { font-size: .8em; margin-left: .1em; }
+.card-head { justify-content: space-between; margin-bottom: .75rem; }
+.card-head h2 { margin: 0; }

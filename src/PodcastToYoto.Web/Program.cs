@@ -62,6 +62,9 @@ builder.Services.AddKeyedSingleton("feeds", (_, _) => new HttpClient(new Sockets
 });
 builder.Services.AddSingleton(sp => new FeedFetcher(sp.GetRequiredKeyedService<HttpClient>("feeds")));
 builder.Services.AddSingleton<SubscriptionService>();
+builder.Services.AddSingleton<SubscriptionNotices>();
+builder.Services.AddSingleton<PlaylistAdopter>();
+builder.Services.AddSingleton<SubscriptionTransfer>();
 
 // ---- Yoto --------------------------------------------------------------------------------------
 builder.Services.AddSingleton(sp =>
@@ -120,6 +123,12 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapHealthChecks("/health");
 app.MapYotoAuth();
+app.MapGet("/export.json", async (SubscriptionTransfer transfer, TimeProvider time, CancellationToken ct) =>
+{
+    var file = await transfer.ExportAsync(ct);
+    var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(file, SubscriptionTransfer.Json);
+    return Results.File(bytes, "application/json", $"podcast-to-yoto-{time.GetUtcNow():yyyyMMdd-HHmm}.json");
+}).ExcludeFromDescription();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Logger.LogInformation("Data directory: {DataDir}; public URL: {PublicUrl}",

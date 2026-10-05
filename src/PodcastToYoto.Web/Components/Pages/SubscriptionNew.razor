@@ -2,6 +2,8 @@
 @using PodcastToYoto.Feeds
 @inject SubscriptionService Subscriptions
 @inject NavigationManager Nav
+@inject PlaylistAdopter Adopter
+@inject SubscriptionNotices Notices
 
 <PageTitle>Add subscription · Podcast → Yoto</PageTitle>
 
@@ -41,9 +43,13 @@
     </section>
 
     <section class="card">
-        <h2>2. Settings</h2>
-        <p class="muted">A new Yoto playlist is created on the first sync. Picking an existing playlist comes later (M4).</p>
-        <SubscriptionSettingsForm Model="_settings" OnValidSubmit="CreateAsync" SubmitLabel="Create subscription" Busy="_busy" LockFeedUrl="true" />
+        <h2>2. Yoto playlist</h2>
+        <PlaylistPicker @bind-SelectedCardId="_cardId" @bind-KeepAsFavourites="_keepTracks" />
+    </section>
+
+    <section class="card">
+        <h2>3. Settings</h2>
+        <SubscriptionSettingsForm Model="_settings" OnValidSubmit="CreateAsync" SubmitLabel="Create subscription" Busy="_busy" LockFeedUrl="true" LockEnabled="@(_cardId is not null)" />
     </section>
 }
 
@@ -53,6 +59,8 @@
     private SubscriptionSettings _settings = new();
     private string? _error;
     private bool _busy;
+    private string? _cardId;
+    private bool _keepTracks;
 
     private async Task OnKey(KeyboardEventArgs e)
     {
@@ -86,6 +94,18 @@
         try
         {
             var (id, _) = await Subscriptions.CreateAsync(_settings);
+            if (_cardId is not null)
+            {
+                try
+                {
+                    var r = await Adopter.AttachAsync(id, _cardId, _keepTracks);
+                    Notices.Set(id, r.Describe());
+                }
+                catch (Exception ex)
+                {
+                    Notices.Set(id, $"Subscription created, but attaching the playlist failed: {ex.Message}");
+                }
+            }
             Nav.NavigateTo($"/subscriptions/{id}");
         }
         catch (Exception ex)

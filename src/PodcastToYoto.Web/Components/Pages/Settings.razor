@@ -1,0 +1,111 @@
+@page "/settings"
+@using Microsoft.Extensions.Options
+@using PodcastToYoto.Web.Options
+@inject SubscriptionTransfer Transfer
+@inject IOptions<AppOptions> AppOpts
+@inject IOptionsMonitor<SyncOptions> SyncOpts
+@inject PodcastToYoto.Yoto.YotoOAuthOptions OAuth
+
+<PageTitle>Settings · Podcast → Yoto</PageTitle>
+
+<h1 style="font-size:1.2rem">Settings</h1>
+
+<section class="card">
+    <h2>Backup</h2>
+    <p class="muted">Subscriptions, their settings, target playlists and favourites. Episode history and uploads are not included; they are rebuilt from the feeds.</p>
+    <div class="row">
+        <a class="button" href="/export.json" download>Download export</a>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Import</h2>
+    <p class="muted">
+        Subscriptions matching an existing one (same feed URL and playlist) are updated; others are created and their feeds checked.
+        Favourites in the file replace the current favourites of each imported subscription.
+    </p>
+    <InputFile OnChange="LoadFileAsync" accept=".json,application/json" />
+    @if (_error is not null)
+    {
+        <div class="alert" style="margin-top:.75rem">@_error</div>
+    }
+    @if (_file is not null)
+    {
+        <div class="toast">
+            <div>Export from @Format.Local(_file.ExportedAt) with @_file.Subscriptions.Count subscription(s):</div>
+            <ul class="plain">
+                @foreach (var s in _file.Subscriptions)
+                {
+                    <li>@s.Settings.Name <span class="muted">· </span>@if (s.YotoCardId is null) { <span class="muted">new playlist</span> } else { <CardLink CardId="@s.YotoCardId" Title="@(s.Settings.TitleOverride ?? s.Settings.Name)" /> }<span class="muted"> · @s.Favourites.Count favourites</span></li>
+                }
+            </ul>
+            <div class="row" style="margin-top:.5rem">
+                <button class="primary" disabled="@_busy" @onclick="ImportAsync">Import</button>
+                <button @onclick="() => _file = null">Cancel</button>
+            </div>
+        </div>
+    }
+    @if (_result is not null)
+    {
+        <div class="toast">@_result</div>
+    }
+</section>
+
+<section class="card">
+    <h2>Configuration</h2>
+    <p class="muted">Read-only; set via appsettings / environment variables (<code>Section__Key</code>).</p>
+    <dl class="kv">
+        <dt>Public URL</dt><dd>@AppOpts.Value.PublicBaseUrl</dd>
+        <dt>Yoto redirect URI</dt><dd>@AppOpts.Value.YotoRedirectUri</dd>
+        <dt>Data directory</dt><dd>@AppOpts.Value.DataDirectory</dd>
+        <dt>Yoto scopes</dt><dd>@OAuth.Scopes</dd>
+        <dt>Default sync interval</dt><dd>@Format.Interval(SyncOpts.CurrentValue.DefaultPollInterval)</dd>
+        <dt>Sync on startup</dt><dd>@(SyncOpts.CurrentValue.RunOnStartup ? "Yes" : "No")</dd>
+        <dt>Global dry run</dt><dd>@(SyncOpts.CurrentValue.DryRun ? "On: nothing is written to Yoto" : "Off")</dd>
+    </dl>
+</section>
+
+@code {
+    private const long MaxImportBytes = 2 * 1024 * 1024;
+
+    private ExportFile? _file;
+    private string? _error, _result;
+    private bool _busy;
+
+    private async Task LoadFileAsync(InputFileChangeEventArgs e)
+    {
+        _error = _result = null;
+        _file = null;
+        try
+        {
+            await using var stream = e.File.OpenReadStream(MaxImportBytes);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            buffer.Position = 0;
+            _file = SubscriptionTransfer.Parse(buffer);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Couldn't read that file: {ex.Message}";
+        }
+    }
+
+    private async Task ImportAsync()
+    {
+        if (_file is null) return;
+        _busy = true;
+        try
+        {
+            _result = (await Transfer.ImportAsync(_file)).Describe();
+            _file = null;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Import failed: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

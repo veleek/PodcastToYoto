@@ -2,7 +2,7 @@
 
 Keeps Yoto Make-Your-Own playlists in sync with podcast RSS feeds. Built first for *Silly Stories for Kids*.
 
-Status: **M1–M3 done (end-to-end sync works); M4 curation + M5 deploy next**. See [docs/requirements.md](docs/requirements.md), [docs/design.md](docs/design.md), [docs/spikes.md](docs/spikes.md).
+Status: **M1–M4 done; M5 (deploy) next**. See [docs/requirements.md](docs/requirements.md), [docs/design.md](docs/design.md), [docs/spikes.md](docs/spikes.md).
 
 ## Layout
 

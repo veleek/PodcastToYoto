@@ -1,0 +1,12 @@
+@* Link to a playlist's page in the Yoto web app. *@
+@if (!string.IsNullOrEmpty(CardId))
+{
+    <a class="cardlink" href="https://my.yotoplay.com/cards/@CardId" target="_blank" rel="noopener" title="Open in Yoto" @onclick:stopPropagation="true">@(Title ?? CardId)<span class="ext">↗</span></a>
+}
+
+@code {
+    [Parameter, EditorRequired] public string? CardId { get; set; }
+
+    /// <summary>Link text; defaults to the card id.</summary>
+    [Parameter] public string? Title { get; set; }
+}

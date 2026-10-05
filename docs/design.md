@@ -99,7 +99,7 @@ Runs per subscription, one subscription at a time:
 | `/` Dashboard | Yoto connection banner (Connect / Reconnect); subscription cards with status, last sync, next poll, episode counts, **Sync now** |
 | `/subscriptions/new` | Feed URL → preview (title, cover, latest episodes) → settings → target playlist: pick existing (`/content/mine`) or "create new" |
 | `/subscriptions/{id}` | Settings; **Episodes** table (favourite toggle, on-playlist indicator, date, duration); **Planned playlist** preview; sync history; dry-run button |
-| `/settings` | Export / import subscriptions + favourites as JSON; global defaults |
+| `/settings` | Export / import subscriptions + favourites as JSON; read-only view of configuration |
 
 ## Configuration
 
@@ -127,11 +127,10 @@ Dev: `launchSettings.json` binds `http://0.0.0.0:5164`. Container: listens on 80
 1. **M1 Foundation** ✅ *(2026-10-05)*: Web project, EF Core + migrations, Data Protection, Yoto connect/reconnect flow, dashboard showing account status.
 2. **M2 Feeds** ✅ *(2026-10-05)*: subscription CRUD, feed preview, polling + episode upsert, episodes table.
 3. **M3 Sync** ✅ *(2026-10-05)*: planner, audio pipeline, publish, scheduler, Sync now, sync history. *End-to-end usable here.*
-4. **M4 Curation**: favourites, playlist picker for existing cards, planned-playlist preview, export/import.
+4. **M4 Curation** ✅ *(2026-10-05)*: favourites (+ clear all); target an existing playlist (picker on create and in settings) — its tracks are matched to feed episodes by normalised title so their audio is reused, optionally kept as favourites, and automatic sync is paused until reviewed; playlist links open the card in the Yoto web app; planned-playlist preview; export/import JSON (`/export.json`, `/settings`).
 5. **M5 Deploy**: Dockerfile (non-root, `/data` volume), compose snippet, GHCR build via GitHub Actions.
 
 ## Later / ideas
 
 - Home Assistant notifications (webhook or MQTT).
 - Per-episode icons from Yoto's public icon library (e.g. match the title's leading emoji).
-- "Adopt" an existing manual playlist: match its tracks to feed episodes and mark them as favourites.

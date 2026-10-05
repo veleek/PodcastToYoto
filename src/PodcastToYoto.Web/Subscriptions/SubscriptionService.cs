@@ -16,7 +16,12 @@ public sealed record SubscriptionSummary(
     DateTimeOffset? LastPolledAt,
     DateTimeOffset? LastSyncedAt,
     SyncResult? LastSyncResult,
-    string? LastError);
+    string? LastError,
+    string? TitleOverride)
+{
+    /// <summary>Title the Yoto playlist is published with.</summary>
+    public string PlaylistTitle => TitleOverride ?? Name;
+}
 
 public sealed record PollOutcome(bool Ok, bool NotModified, MergeResult Merge, string? Error)
 {
@@ -41,7 +46,7 @@ public sealed class SubscriptionService(
             .Select(s => new SubscriptionSummary(
                 s.Id, s.Name, s.FeedUrl, s.Enabled, s.YotoCardId, s.CoverSourceUrl,
                 s.Episodes.Count, s.Episodes.Count(e => e.IsFavourite),
-                s.LastPolledAt, s.LastSyncedAt, s.LastSyncResult, s.LastError))
+                s.LastPolledAt, s.LastSyncedAt, s.LastSyncResult, s.LastError, s.TitleOverride))
             .ToListAsync(ct);
     }
 
@@ -105,6 +110,15 @@ public sealed class SubscriptionService(
         logger.LogInformation("Subscription {Id} deleted", id);
     }
 
+    /// <summary>Set the target playlist id without touching its contents (used by import).</summary>
+    public async Task SetPlaylistAsync(int id, string cardId, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        await db.Subscriptions.Where(x => x.Id == id).ExecuteUpdateAsync(u => u
+            .SetProperty(x => x.YotoCardId, cardId)
+            .SetProperty(x => x.LastPublishedHash, (string?)null), ct);
+    }
+
     /// <summary>Forget the target playlist so the next sync creates a new one (e.g. it was deleted in the Yoto app).</summary>
     public async Task ClearPlaylistAsync(int id, CancellationToken ct = default)
     {
@@ -123,6 +137,13 @@ public sealed class SubscriptionService(
             .OrderByDescending(r => r.StartedAt)
             .Take(count)
             .ToListAsync(ct);
+    }
+
+    public async Task<int> ClearFavouritesAsync(int subscriptionId, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.Episodes.Where(e => e.SubscriptionId == subscriptionId && e.IsFavourite)
+            .ExecuteUpdateAsync(u => u.SetProperty(e => e.IsFavourite, false), ct);
     }
 
     public async Task SetFavouriteAsync(int episodeId, bool favourite, CancellationToken ct = default)
