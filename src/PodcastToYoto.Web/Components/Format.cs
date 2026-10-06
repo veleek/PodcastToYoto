@@ -29,6 +29,22 @@ public static class Format
             : $"in {(int)d.TotalDays} days";
     }
 
+    /// <summary>"NoChange" → "No change", "DryRun" → "Dry run".</summary>
+    public static string Words(Enum value)
+    {
+        var name = value.ToString();
+        var sb = new System.Text.StringBuilder(name.Length + 4);
+        for (var i = 0; i < name.Length; i++)
+        {
+            var c = name[i];
+            if (i > 0 && char.IsUpper(c)) sb.Append(' ').Append(char.ToLowerInvariant(c));
+            else sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
+    public static string Result(PodcastToYoto.Web.Data.SyncResult r) => Words(r);
+
     public static string Ago(DateTimeOffset? value, DateTimeOffset now)
     {
         if (value is null) return "never";

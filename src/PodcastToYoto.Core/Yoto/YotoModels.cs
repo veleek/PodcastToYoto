@@ -85,6 +85,12 @@ public sealed record YotoTranscodedAudio(
 
 public sealed record YotoUploadUrl(string UploadId, string? UploadUrl);
 
+/// <summary>A 16x16 display icon. Referenced in content as <c>yoto:#{MediaId}</c>.</summary>
+public sealed record YotoIcon(string MediaId, string Title, string? Url, IReadOnlyList<string> Tags)
+{
+    public string Ref => $"yoto:#{MediaId}";
+}
+
 public sealed record YotoCardSummary(string CardId, string? Title, DateTimeOffset? UpdatedAt, JsonElement Raw);
 
 public sealed class YotoApiException(string message, int statusCode, string? body) : Exception(message)

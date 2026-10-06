@@ -35,21 +35,35 @@
                     <span class="badge none">Not connected</span>
                     break;
             }
+            @if (_status.Status != AccountStatus.Disconnected)
+            {
+                @* Only shown on narrow screens; on desktop the details are always visible. *@
+                <button class="link-btn narrow-toggle" @onclick="() => _showAccountDetails = !_showAccountDetails"
+                        aria-expanded="@(_showAccountDetails ? "true" : "false")">
+                    @(_showAccountDetails ? "Hide details ▴" : "Details ▾")
+                </button>
+            }
         </div>
 
         @if (_status.MissingScopes.Count > 0)
         {
             <div class="alert" style="margin-top:.75rem">
-                Missing permission(s): <code>@(string.Join(" ", _status.MissingScopes))</code>. Click <strong>Reconnect</strong> to grant them.
+                Missing permission(s): @foreach (var sc in _status.MissingScopes) { <span class="badge err scope">@sc</span> } Click <strong>Reconnect</strong> to grant them.
             </div>
         }
 
         @if (_status.Status != AccountStatus.Disconnected)
         {
-            <dl class="kv">
+            <dl class="kv collapsible @(_showAccountDetails ? "" : "collapsed")">
                 <dt>Connected</dt><dd>@Format.Local(_status.ConnectedAt)</dd>
                 <dt>Access token expires</dt><dd>@Format.Local(_status.ExpiresAt)</dd>
-                <dt>Scopes</dt><dd>@_status.Scope</dd>
+                <dt>Scopes</dt>
+                <dd class="pills">
+                    @foreach (var sc in (_status.Scope ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        <span class="badge none scope">@sc</span>
+                    }
+                </dd>
                 @if (!string.IsNullOrEmpty(_status.LastError))
                 {
                     <dt>Last error</dt><dd>@_status.LastError</dd>
@@ -57,10 +71,10 @@
             </dl>
         }
 
-        <div class="row">
+        <div class="row actions">
             @if (_status.Status == AccountStatus.Connected)
             {
-                <button @onclick="TestAsync" disabled="@_busy">Test connection</button>
+                <button @onclick="TestAsync" disabled="@_busy">Test</button>
                 <button @onclick="Connect" disabled="@_busy">Reconnect</button>
                 <button @onclick="DisconnectAsync" disabled="@_busy">Disconnect</button>
             }
@@ -128,6 +142,7 @@
     private YotoAccountStatus? _status;
     private YotoConnectionTest? _test;
     private bool _busy;
+    private bool _showAccountDetails;
     private IReadOnlyList<SubscriptionSummary>? _subs;
 
     protected override async Task OnInitializedAsync()

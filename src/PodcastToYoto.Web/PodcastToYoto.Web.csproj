@@ -11,6 +11,9 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Icons\emoji-names.txt" LogicalName="emoji-names.txt" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\PodcastToYoto.Core\PodcastToYoto.Core.csproj" />
   </ItemGroup>
 </Project>

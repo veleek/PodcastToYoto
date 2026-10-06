@@ -5,6 +5,10 @@
 @inject IOptions<AppOptions> AppOpts
 @inject IOptionsMonitor<SyncOptions> SyncOpts
 @inject PodcastToYoto.Yoto.YotoOAuthOptions OAuth
+@inject Notifier Notifier
+@inject IOptionsMonitor<HomeAssistantOptions> HaOpts
+@inject PodcastToYoto.Web.Icons.IconCatalog IconCatalog
+@inject TimeProvider Time
 
 <PageTitle>Settings · Podcast → Yoto</PageTitle>
 
@@ -52,6 +56,53 @@
 </section>
 
 <section class="card">
+    <h2>Notifications</h2>
+    <dl class="kv">
+        <dt>Log</dt><dd>Always on</dd>
+        <dt>Home Assistant</dt>
+        <dd>
+            @if (HaOpts.CurrentValue.IsConfigured)
+            {
+                <span>@HaOpts.CurrentValue.BaseUrl</span>
+                @if (!string.IsNullOrWhiteSpace(HaOpts.CurrentValue.WebhookId)) { <span class="muted"> · webhook</span> }
+                @if (!string.IsNullOrWhiteSpace(HaOpts.CurrentValue.Service)) { <span class="muted"> · @HaOpts.CurrentValue.Service</span> }
+                <span class="muted"> · events: @(HaOpts.CurrentValue.Events.Count == 0 ? "all" : string.Join(", ", HaOpts.CurrentValue.Events))</span>
+            }
+            else
+            {
+                <span class="muted">Not configured (set <code>Notifications__HomeAssistant__*</code>)</span>
+            }
+        </dd>
+    </dl>
+    <div class="row">
+        <button @onclick="TestNotificationsAsync" disabled="@_busy">Send test notification</button>
+    </div>
+    @if (_testResults is not null)
+    {
+        <ul class="plain">
+            @foreach (var line in _testResults) { <li>@line</li> }
+        </ul>
+    }
+</section>
+
+<section class="card">
+    <h2>Yoto icon library</h2>
+    <p class="muted">Cached on disk and refreshed from Yoto every @((int)PodcastToYoto.Web.Icons.IconCatalog.Ttl.TotalDays) days.</p>
+    <dl class="kv">
+        <dt>Icons</dt><dd>@(IconCatalog.Count == 0 ? "not loaded" : IconCatalog.Count.ToString())</dd>
+        <dt>Fetched</dt><dd>@(IconCatalog.FetchedAt is null ? "never" : $"{Format.Ago(IconCatalog.FetchedAt, Time.GetUtcNow())} ({Format.Local(IconCatalog.FetchedAt)})")</dd>
+        @if (IconCatalog.LastError is not null)
+        {
+            <dt>Last error</dt><dd class="err-text">@IconCatalog.LastError</dd>
+        }
+    </dl>
+    <div class="row">
+        <button @onclick="RefreshIconsAsync" disabled="@_busy">Refresh now</button>
+        @if (_iconMessage is not null) { <span class="muted">@_iconMessage</span> }
+    </div>
+</section>
+
+<section class="card">
     <h2>Configuration</h2>
     <p class="muted">Read-only; set via appsettings / environment variables (<code>Section__Key</code>).</p>
     <dl class="kv">
@@ -69,6 +120,38 @@
     private const long MaxImportBytes = 2 * 1024 * 1024;
 
     private ExportFile? _file;
+    private IReadOnlyList<string>? _testResults;
+    private string? _iconMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await IconCatalog.GetAsync(); // loads from the disk cache, so the counts above are filled in
+        }
+        catch (PodcastToYoto.Yoto.YotoAuthException)
+        {
+            // Not connected: nothing to show yet.
+        }
+    }
+
+    private async Task RefreshIconsAsync()
+    {
+        _busy = true;
+        try
+        {
+            var index = await IconCatalog.RefreshAsync();
+            _iconMessage = index is null ? "Refresh failed." : $"Fetched {index.Count} icons.";
+        }
+        catch (PodcastToYoto.Yoto.YotoAuthException ex)
+        {
+            _iconMessage = $"Yoto login problem: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
     private string? _error, _result;
     private bool _busy;
 
@@ -87,6 +170,19 @@
         catch (Exception ex)
         {
             _error = $"Couldn't read that file: {ex.Message}";
+        }
+    }
+
+    private async Task TestNotificationsAsync()
+    {
+        _busy = true;
+        try
+        {
+            _testResults = await Notifier.SendTestAsync();
+        }
+        finally
+        {
+            _busy = false;
         }
     }
 

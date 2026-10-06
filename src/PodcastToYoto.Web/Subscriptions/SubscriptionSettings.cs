@@ -27,6 +27,9 @@ public sealed class SubscriptionSettings
 
     public bool IncludeTrailers { get; set; }
 
+    /// <summary>Pick each episode's icon from the emoji in its title.</summary>
+    public bool MatchIcons { get; set; } = true;
+
     /// <summary>Null → global default.</summary>
     [Range(5, 24 * 60, ErrorMessage = "Between 5 and 1440 minutes.")]
     public int? PollIntervalMinutes { get; set; }
@@ -41,6 +44,7 @@ public sealed class SubscriptionSettings
         MaxTracks = s.MaxTracks,
         Order = s.Order,
         IncludeTrailers = s.IncludeTrailers,
+        MatchIcons = !s.UseDefaultIcon,
         PollIntervalMinutes = s.PollInterval is { } p ? (int)p.TotalMinutes : null,
     };
 
@@ -54,6 +58,7 @@ public sealed class SubscriptionSettings
         s.MaxTracks = MaxTracks;
         s.Order = Order;
         s.IncludeTrailers = IncludeTrailers;
+        s.UseDefaultIcon = !MatchIcons;
         s.PollInterval = PollIntervalMinutes is { } m ? TimeSpan.FromMinutes(m) : null;
     }
 }

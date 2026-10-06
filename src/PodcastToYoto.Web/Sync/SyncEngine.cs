@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PodcastToYoto.Web.Data;
+using PodcastToYoto.Web.Icons;
 using PodcastToYoto.Web.Options;
 using PodcastToYoto.Web.Subscriptions;
 using PodcastToYoto.Yoto;
@@ -25,6 +26,7 @@ public sealed class SyncEngine(
     YotoApiClient yoto,
     SyncActivity activity,
     INotificationSink notify,
+    IconCatalog iconCatalog,
     IOptionsMonitor<SyncOptions> options,
     TimeProvider time,
     ILogger<SyncEngine> logger)
@@ -155,6 +157,10 @@ public sealed class SyncEngine(
         }
 
         // 3. Audio
+        var icons = s.UseDefaultIcon ? null : await iconCatalog.GetAsync(ct);
+        var notes = new List<string>();
+        if (!s.UseDefaultIcon && icons is null && iconCatalog.LastError is not null) notes.Add(iconCatalog.LastError);
+
         var entries = new List<PlaylistEntry>();
         var skipped = new List<string>();
         var i = 0;
@@ -167,7 +173,11 @@ public sealed class SyncEngine(
             {
                 var a = await audio.EnsureAsync(db, e, ct);
                 if (needsUpload) run.Uploaded++;
-                entries.Add(new PlaylistEntry(e.Title, AudioPipeline.ToTranscoded(a)));
+                // A hand-picked icon always wins; otherwise emoji matching (unless turned off for this subscription).
+                var iconRef = e.IconMediaId is { } chosen ? $"yoto:#{chosen}"
+                    : icons is null ? null
+                    : IconMatcher.Match(e.Title, icons)?.Icon.Ref;
+                entries.Add(new PlaylistEntry(e.Title, AudioPipeline.ToTranscoded(a), iconRef));
             }
             catch (Exception ex) when (ex is HttpRequestException or YotoApiException or TimeoutException
                                        || (ex is TaskCanceledException && !ct.IsCancellationRequested))
@@ -202,7 +212,7 @@ public sealed class SyncEngine(
         var hash = Hash(request);
 
         if (s.YotoCardId is not null && hash == s.LastPublishedHash)
-            return new SyncOutcome(SyncResult.NoChange, Summary("No changes.", entries.Count, run, skipped, plan), plan);
+            return new SyncOutcome(SyncResult.NoChange, Summary("No changes.", entries.Count, run, skipped, plan, notes), plan);
 
         activity.Set(id, s.YotoCardId is null ? "Creating Yoto playlist…" : "Updating Yoto playlist…");
         if (s.YotoCardId is not null)
@@ -214,7 +224,7 @@ public sealed class SyncEngine(
         s.LastPublishedHash = hash;
         await db.SaveChangesAsync(ct);
 
-        var message = Summary(created ? $"Created playlist {s.YotoCardId}." : "Playlist updated.", entries.Count, run, skipped, plan);
+        var message = Summary(created ? $"Created playlist {s.YotoCardId}." : "Playlist updated.", entries.Count, run, skipped, plan, notes);
         logger.LogInformation("Subscription {Id} '{Name}': {Message}", id, s.Name, message);
         await notify.NotifyAsync(new Notification(NotificationKind.PlaylistUpdated, s.Name, message, id), CancellationToken.None);
         return new SyncOutcome(SyncResult.Updated, message, plan);
@@ -276,11 +286,12 @@ public sealed class SyncEngine(
         }
     }
 
-    private static string Summary(string head, int tracks, SyncRun run, List<string> skipped, PlannedPlaylist plan)
+    private static string Summary(string head, int tracks, SyncRun run, List<string> skipped, PlannedPlaylist plan, List<string> notes)
     {
         var sb = new StringBuilder(head).Append($" {tracks} tracks; {run.NewEpisodes} new in feed; {run.Uploaded} uploaded.");
         if (skipped.Count > 0) sb.Append($" Skipped (audio unavailable): {string.Join(", ", skipped)}.");
         foreach (var w in plan.Warnings) sb.Append(' ').Append(w);
+        foreach (var n in notes) sb.Append(' ').Append(n);
         return sb.ToString();
     }
 

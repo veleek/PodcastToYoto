@@ -14,6 +14,14 @@ services:
       - Yoto__ClientId=${YOTO_CLIENT_ID:?Set YOTO_CLIENT_ID in .env}
       # - Sync__DefaultPollInterval=01:00:00
       # - Sync__DryRun=true
+      # Home Assistant notifications (see README). Webhook needs no token; Service needs HA_TOKEN.
+      - Notifications__HomeAssistant__BaseUrl=${HA_BASE_URL:-}
+      - Notifications__HomeAssistant__WebhookId=${HA_WEBHOOK_ID}
+      # - Notifications__HomeAssistant__Service=notify.mobile_app_phone
+      # - Notifications__HomeAssistant__Token=${HA_TOKEN}
+      # This defines an "array" of events to listen to where the array indexes are explicit.
+      # - Notifications__HomeAssistant__Events__0=SyncFailed
+      # - Notifications__HomeAssistant__Events__1=YotoNeedsLogin
     volumes:
       - ./data:/data
     # No `ports:`: only reachable through Traefik on the shared network.

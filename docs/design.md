@@ -30,36 +30,102 @@ Split `Web` into `Web` + `Sync` later only if it gets unwieldy.
 
 ## Data model
 
+```mermaid
+erDiagram
+    YotoAccount {
+        int Id PK "always 1"
+        string ProtectedAccessToken "Data Protection encrypted"
+        string ProtectedRefreshToken "Data Protection encrypted, single-use"
+        datetime ExpiresAt
+        string Scope
+        string Status "Disconnected | Connected | NeedsReauth"
+        string LastError
+    }
+    Subscription {
+        int Id PK
+        string Name
+        string FeedUrl
+        bool Enabled
+        string YotoCardId "null = create on first sync"
+        string TitleOverride
+        int RecentCount "default 25"
+        int MaxTracks "default 100"
+        string Order "NewestFirst | OldestFirst"
+        bool IncludeTrailers
+        bool UseDefaultIcon "true = no emoji icon matching"
+        timespan PollInterval "null = global default"
+        string CoverSourceUrl
+        string CoverMediaUrl "re-uploaded when the feed image changes"
+        string FeedETag
+        string FeedLastModified
+        string LastPublishedHash "skip POST when unchanged"
+        string LastSyncResult
+        string LastError
+    }
+    Episode {
+        int Id PK
+        int SubscriptionId FK
+        string Guid "unique per subscription"
+        string Title
+        datetime PublishedAt
+        string EnclosureUrl
+        int DurationSeconds
+        string EpisodeType "full | bonus | trailer"
+        bool IsFavourite
+        string IconMediaId "hand-picked icon; null = automatic"
+        datetime MissingFromFeedSince "set instead of deleting"
+        int AudioId FK
+    }
+    Audio {
+        int Id PK
+        string SourceSha256 "unique; yoto:<sha> when adopted from an existing card"
+        string TranscodedSha256 "track URL = yoto:#<sha>"
+        int DurationSeconds
+        int FileSize
+        string ChannelsJson
+        string FormatJson
+    }
+    SyncRun {
+        int Id PK
+        int SubscriptionId FK
+        string Trigger "Schedule | Manual | Startup"
+        datetime StartedAt
+        datetime FinishedAt
+        string Result "Running | NoChange | Updated | Failed | DryRun"
+        int NewEpisodes
+        int Uploaded
+        string Message
+    }
+
+    Subscription ||--o{ Episode : has
+    Subscription ||--o{ SyncRun : "history (last ~200)"
+    Episode }o--o| Audio : "uploaded as"
 ```
-YotoAccount (single row)
-  AccessToken*, RefreshToken*, ExpiresAt, Scope, Status (Connected | NeedsReauth), LastError, UpdatedAt
-  (* encrypted via Data Protection)
 
-Subscription
-  Id, Name, FeedUrl, Enabled
-  YotoCardId?            null → create on first sync
-  TitleOverride?, RecentCount (25), MaxTracks (100), Order (NewestFirst | OldestFirst)
-  IncludeTrailers (false), PollInterval? (null → global default)
-  CoverSourceUrl?, CoverMediaUrl?          re-upload cover only when the feed image URL changes
-  FeedETag?, FeedLastModified?, LastPolledAt?
-  LastPublishedHash?, LastSyncedAt?, LastSyncStatus?, LastError?
-
-Episode
-  Id, SubscriptionId, Guid (unique per subscription), Title, PublishedAt?, EnclosureUrl, EnclosureLength?,
-  DurationSeconds?, EpisodeType?, ImageUrl?, IsFavourite, FirstSeenAt, MissingFromFeedSince?
-  AudioId? → Audio
-
-Audio  (one row per distinct source file, shared across subscriptions)
-  Id, SourceSha256 (unique), TranscodedSha256, DurationSeconds, FileSize, Channels, Format, UploadedAt
-
-SyncRun  (history; keep last ~200)
-  Id, SubscriptionId, Trigger (Schedule | Manual | Startup), StartedAt, FinishedAt,
-  Result (NoChange | Updated | Failed | DryRun), NewEpisodes, Uploaded, Message
-```
+`Audio` has one row per distinct source file and is shared across subscriptions, so the same episode on two cards is only uploaded once. `YotoAccount` is a single row.
 
 Episodes are never deleted when they fall out of the feed (`MissingFromFeedSince` is set instead), so favourites from the back-catalogue stay playable.
 
 ## Sync engine
+
+```mermaid
+flowchart TD
+    T([Schedule tick / Sync now / startup]) --> L{Global lock}
+    L --> P[Poll feed<br/>conditional GET]
+    P -->|304| PL
+    P -->|200| M[Merge episodes by GUID<br/>new / updated / missing]
+    M --> PL[Plan<br/>newest N ∪ favourites, trim to MaxTracks, order]
+    PL --> DR{Dry run?}
+    DR -->|yes| R1([Report plan, write nothing])
+    DR -->|no| A[Ensure audio<br/>download → hash → reuse or upload → transcode]
+    A --> I[Icons<br/>hand-picked, else emoji match]
+    I --> C[Cover<br/>upload if feed image changed]
+    C --> H{Content hash ==<br/>LastPublishedHash?}
+    H -->|yes| R2([NoChange])
+    H -->|no| G[GET existing card<br/>keep config / playbackType]
+    G --> POST[POST /content<br/>create or update]
+    POST --> R3([Updated + notify])
+```
 
 Runs per subscription, one subscription at a time:
 
@@ -79,7 +145,7 @@ Runs per subscription, one subscription at a time:
 - Transient errors are retried in the API client; anything else is recorded on the `SyncRun` and retried next interval.
 
 **Scheduler**:
-- Ticks every minute and runs subscriptions whose `LastPolledAt + PollInterval` has passed.
+- Ticks every minute and runs subscriptions whose last (non-dry-run) sync started more than `PollInterval` ago.
 - "Sync now" posts the subscription ID to a channel.
 - Optionally runs once on startup.
 - A global lock means only one sync runs at a time.
@@ -128,9 +194,10 @@ Dev: `launchSettings.json` binds `http://0.0.0.0:5164`. Container: listens on 80
 2. **M2 Feeds** ✅ *(2026-10-05)*: subscription CRUD, feed preview, polling + episode upsert, episodes table.
 3. **M3 Sync** ✅ *(2026-10-05)*: planner, audio pipeline, publish, scheduler, Sync now, sync history. *End-to-end usable here.*
 4. **M4 Curation** ✅ *(2026-10-05)*: favourites (+ clear all); target an existing playlist (picker on create and in settings) — its tracks are matched to feed episodes by normalised title so their audio is reused, optionally kept as favourites, and automatic sync is paused until reviewed; playlist links open the card in the Yoto web app; planned-playlist preview; export/import JSON (`/export.json`, `/settings`).
-5. **M5 Deploy** *(written 2026-10-05)*: multi-stage Dockerfile (non-root, `/data` volume, port 8080), `deploy/compose.yaml` (included from the server's parent services compose; shared `services` network, Traefik labels + PocketID middleware, explicit DNS), `build.ps1` (test, build, optional tarball / local-registry push), GitHub Actions CI (build + test only; no image publishing).
+5. **M5 Deploy** ✅ *(2026-10-05, running at yoto.example.com)*: multi-stage Dockerfile (non-root, `/data` volume, port 8080), `deploy/compose.yaml` (included from the server's parent services compose; shared `services` network, Traefik labels + PocketID middleware, explicit DNS), `build.ps1` (test, build, optional tarball / local-registry push), GitHub Actions CI (build + test only; no image publishing).
+
+6. **M6 Polish** ✅ *(2026-10-06)*: episode icons (plus a per-episode icon picker that overrides the automatic match) — emoji in the title → Unicode name → keyword match against Yoto's public icons (title +3, tags +1, shortest title wins; title-word fallback), per-subscription opt-out, shown in the episodes table; Home Assistant notifications (webhook and/or REST service call, event filter, test button) via a fan-out `Notifier` over `INotificationChannel`s.
 
 ## Later / ideas
 
-- Home Assistant notifications (webhook or MQTT).
-- Per-episode icons from Yoto's public icon library (e.g. match the title's leading emoji).
+- Local registry for faster redeploys (only changed layers transfer).

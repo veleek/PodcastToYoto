@@ -2,8 +2,9 @@ namespace PodcastToYoto.Yoto;
 
 public sealed class YotoOAuthOptions
 {
-    // user:content:view is listed explicitly: GET /content/{cardId} checks for it even though manage implies it.
-    public const string DefaultScopes = "user:content:view user:content:manage offline_access";
+    // user:content:view / user:icons:manage are listed explicitly: some endpoints (GET /content/{cardId},
+    // public icons) check for them even though user:content:manage is documented to include them.
+    public const string DefaultScopes = "user:content:view user:content:manage user:icons:manage offline_access";
 
     public required string ClientId { get; init; }
     public string Audience { get; init; } = "https://api.yotoplay.com";

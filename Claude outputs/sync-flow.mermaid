@@ -1,0 +1,16 @@
+flowchart TD
+    T([Schedule tick / Sync now / startup]) --> L{Global lock}
+    L --> P[Poll feed<br/>conditional GET]
+    P -->|304| PL
+    P -->|200| M[Merge episodes by GUID<br/>new / updated / missing]
+    M --> PL[Plan<br/>newest N ∪ favourites, trim to MaxTracks, order]
+    PL --> DR{Dry run?}
+    DR -->|yes| R1([Report plan, write nothing])
+    DR -->|no| A[Ensure audio<br/>download → hash → reuse or upload → transcode]
+    A --> I[Icons<br/>hand-picked, else emoji match]
+    I --> C[Cover<br/>upload if feed image changed]
+    C --> H{Content hash ==<br/>LastPublishedHash?}
+    H -->|yes| R2([NoChange])
+    H -->|no| G[GET existing card<br/>keep config / playbackType]
+    G --> POST[POST /content<br/>create or update]
+    POST --> R3([Updated + notify])

@@ -135,6 +135,34 @@ public sealed class YotoApiClient
             : null;
     }
 
+    // ---- Icons ---------------------------------------------------------------------------
+
+    /// <summary>GET /media/displayIcons/user/yoto — Yoto's public 16x16 icon library (needs user:icons:manage).</summary>
+    public async Task<IReadOnlyList<YotoIcon>> GetPublicIconsAsync(CancellationToken ct = default)
+    {
+        using var doc = await SendJsonAsync(HttpMethod.Get, "media/displayIcons/user/yoto", null, ct);
+        var list = new List<YotoIcon>();
+        if (!doc.RootElement.TryGetProperty("displayIcons", out var icons) || icons.ValueKind != JsonValueKind.Array)
+            return list;
+
+        foreach (var i in icons.EnumerateArray())
+        {
+            var mediaId = i.TryGetProperty("mediaId", out var m) ? m.GetString() : null;
+            if (string.IsNullOrEmpty(mediaId)) continue;
+
+            var tags = new List<string>();
+            if (i.TryGetProperty("publicTags", out var t) && t.ValueKind == JsonValueKind.Array)
+                tags.AddRange(t.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!));
+
+            list.Add(new YotoIcon(
+                mediaId,
+                i.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String ? title.GetString()! : "",
+                i.TryGetProperty("url", out var url) && url.ValueKind == JsonValueKind.String ? url.GetString() : null,
+                tags));
+        }
+        return list;
+    }
+
     // ---- Plumbing ------------------------------------------------------------------------
 
     private async Task<JsonDocument> SendJsonAsync(HttpMethod method, string relative, HttpContent? content, CancellationToken ct, bool allowNotFound = false)

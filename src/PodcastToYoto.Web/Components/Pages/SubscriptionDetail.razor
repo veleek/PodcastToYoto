@@ -4,6 +4,7 @@
 @inject SyncScheduler Scheduler
 @inject PlaylistAdopter Adopter
 @inject SubscriptionNotices Notices
+@inject PodcastToYoto.Web.Icons.IconCatalog Icons
 @inject SyncEngine Engine
 @inject SyncActivity Activity
 @inject NavigationManager Nav
@@ -22,14 +23,17 @@ else if (_sub is null)
 else
 {
     <section class="card">
-        <div class="sub-head">
+        @* Grid: cover | title on top, details below. On narrow screens the details span the full width. *@
+        <div class="sub-hero @(_sub.CoverSourceUrl is null ? "no-cover" : "")">
             @if (_sub.CoverSourceUrl is not null)
             {
-                <img src="@_sub.CoverSourceUrl" alt="" />
+                <img class="hero-img" src="@_sub.CoverSourceUrl" alt="" />
             }
-            <div class="grow">
+            <div class="hero-title">
                 <h2>@_sub.Name</h2>
                 <div class="muted" style="overflow-wrap:anywhere">@_sub.FeedUrl</div>
+            </div>
+            <div class="hero-body">
                 <dl class="kv">
                     <dt>Playlist</dt>
                     <dd>
@@ -49,7 +53,7 @@ else
                     <dt>Last sync</dt>
                     <dd>
                         @Format.Ago(_sub.LastSyncedAt, Time.GetUtcNow())
-                        @if (_sub.LastSyncResult is { } result) { <span class="badge after @BadgeClass(result)">@result</span> }
+                        @if (_sub.LastSyncResult is { } result) { <span class="badge after @BadgeClass(result)">@Format.Result(result)</span> }
                     </dd>
                     <dt>Next sync</dt>
                     <dd>
@@ -135,7 +139,7 @@ else
         <div class="row card-head">
             <h2>Episodes</h2>
             <div class="row">
-                <input class="text" style="width:14rem" placeholder="Filter…" @bind="_filter" @bind:event="oninput" />
+                <input class="text filter" placeholder="Filter…" @bind="_filter" @bind:event="oninput" />
                 <label class="row"><input type="checkbox" @bind="_favouritesOnly" /> Favourites</label>
                 <label class="row"><input type="checkbox" @bind="_plannedOnly" /> On playlist</label>
                 @if (_confirmClearFavs)
@@ -152,10 +156,12 @@ else
         <p class="muted">
             Playlist plan: @(_plan!.Episodes.Count) episodes (@_sub.RecentCount most recent + favourites, @(_sub.Order == PlaylistOrder.NewestFirst ? "newest" : "oldest") first).
             @foreach (var w in _plan!.Warnings) { <span class="err-text"> @w</span> }
+            @if (!_sub.UseDefaultIcon && _iconMatches.Count == 0 && Icons.LastError is not null) { <span class="err-text"> @Icons.LastError</span> }
         </p>
+        <div class="table-wrap">
         <table class="eps">
             <thead>
-                <tr><th></th><th title="Position on playlist">#</th><th>Published</th><th>Title</th><th>Length</th><th title="Uploaded to Yoto">Up</th></tr>
+                <tr><th></th><th title="Position on playlist">#</th><th title="Icon on the player">Icon</th><th class="wide-only">Published</th><th>Title</th><th class="wide-only">Length</th><th class="wide-only" title="Uploaded to Yoto">Up</th></tr>
             </thead>
             <tbody>
                 @foreach (var e in VisibleEpisodes)
@@ -167,18 +173,33 @@ else
                                     @onclick="() => ToggleFavouriteAsync(e)">@(e.IsFavourite ? "★" : "☆")</button>
                         </td>
                         <td class="num">@pos</td>
-                        <td class="num">@Format.Date(e.PublishedAt)</td>
                         <td>
+                            @{ var (shown, tip) = ShownIcon(e); }
+                            @if (_iconIndex is not null)
+                            {
+                                <button class="icon-btn @(e.IconMediaId is null ? "" : "pinned")" title="@tip" @onclick="() => _iconFor = e">
+                                    @if (shown?.Url is { } url) { <img class="icon16" src="@url" alt="@shown.Title" /> } else { <span>+</span> }
+                                </button>
+                            }
+                            else if (shown?.Url is { } url)
+                            {
+                                <img class="icon16" src="@url" alt="@shown.Title" title="@tip" />
+                            }
+                        </td>
+                        <td class="num wide-only">@Format.Date(e.PublishedAt)</td>
+                        <td class="title">
                             @e.Title
                             @if (e.EpisodeType is "bonus" or "trailer") { <span class="badge after none">@e.EpisodeType</span> }
                             @if (e.MissingFromFeedSince is not null) { <span class="badge after warn" title="Since @Format.Local(e.MissingFromFeedSince)">not in feed</span> }
+                            <div class="narrow-only muted meta">@Format.Date(e.PublishedAt) · @Format.Duration(e.DurationSeconds)@(e.AudioId is null ? "" : " · ✓ uploaded")</div>
                         </td>
-                        <td class="num">@Format.Duration(e.DurationSeconds)</td>
-                        <td>@(e.AudioId is null ? "" : "✓")</td>
+                        <td class="num wide-only">@Format.Duration(e.DurationSeconds)</td>
+                        <td class="wide-only">@(e.AudioId is null ? "" : "✓")</td>
                     </tr>
                 }
             </tbody>
         </table>
+        </div>
     </section>
 
     <section class="card">
@@ -189,24 +210,33 @@ else
         }
         else
         {
-            <table class="eps">
-                <thead><tr><th>Started</th><th>Trigger</th><th>Result</th><th>New</th><th>Uploaded</th><th>Details</th></tr></thead>
+            <div class="table-wrap">
+            <table class="eps history">
+                <thead><tr><th>Started</th><th class="wide-only">Trigger</th><th>Result</th><th class="wide-only">New</th><th class="wide-only">Uploaded</th><th>Details</th></tr></thead>
                 <tbody>
                     @foreach (SyncRun run in _runs)
                     {
                         <tr>
                             <td class="num">@Format.Local(run.StartedAt)</td>
-                            <td>@run.Trigger</td>
-                            <td><span class="badge @BadgeClass(run.Result)">@run.Result</span></td>
-                            <td class="num">@run.NewEpisodes</td>
-                            <td class="num">@run.Uploaded</td>
+                            <td class="wide-only">@Format.Words(run.Trigger)</td>
+                            <td><span class="badge @BadgeClass(run.Result)">@Format.Result(run.Result)</span></td>
+                            <td class="num wide-only">@run.NewEpisodes</td>
+                            <td class="num wide-only">@run.Uploaded</td>
                             <td>@run.Message</td>
                         </tr>
                     }
                 </tbody>
             </table>
+            </div>
         }
     </section>
+}
+
+@if (_iconFor is not null && _iconIndex is not null)
+{
+    <IconPicker Index="_iconIndex" EpisodeTitle="@_iconFor.Title" CurrentMediaId="@_iconFor.IconMediaId"
+                AutoMatch="@_iconMatches.GetValueOrDefault(_iconFor.Id)"
+                OnPick="PickIconAsync" OnClose="() => _iconFor = null" />
 }
 
 @code {
@@ -214,6 +244,9 @@ else
 
     private Subscription? _sub;
     private PlannedPlaylist? _plan;
+    private Dictionary<int, PodcastToYoto.Web.Icons.IconMatch?> _iconMatches = new();
+    private PodcastToYoto.Web.Icons.IconIndex? _iconIndex;
+    private Episode? _iconFor;
     private NextSync? _next;
     private Dictionary<int, int> _positions = new();
     private IReadOnlyList<SyncRun> _runs = [];
@@ -249,6 +282,20 @@ else
 
         _settings = SubscriptionSettings.From(_sub);
         Replan();
+
+        PodcastToYoto.Web.Icons.IconIndex? icons = null;
+        try
+        {
+            icons = await Icons.GetAsync(); // also needed for the picker, even with automatic icons off
+        }
+        catch (PodcastToYoto.Yoto.YotoAuthException)
+        {
+            // Not connected / needs re-login: the dashboard says so; just show no icons here.
+        }
+        _iconIndex = icons;
+        _iconMatches = icons is null || _sub.UseDefaultIcon
+            ? new()
+            : _sub.Episodes.ToDictionary(e => e.Id, e => PodcastToYoto.Web.Icons.IconMatcher.Match(e.Title, icons));
         _runs = await Subscriptions.GetRecentRunsAsync(Id);
         _next = await Scheduler.GetNextSyncAsync(Id);
     }
@@ -325,6 +372,30 @@ else
         _confirmClearFavs = false;
         _message = $"Cleared {n} favourite(s). Applies on the next sync.";
         await LoadAsync();
+    }
+
+    /// <summary>The icon the player will show for this episode, and a tooltip explaining why.</summary>
+    private (PodcastToYoto.Web.Icons.IconCandidate? Icon, string Tip) ShownIcon(Episode e)
+    {
+        if (e.IconMediaId is { } id)
+        {
+            var picked = _iconIndex?.Find(id);
+            return (picked, $"{picked?.Title ?? id} (picked by hand) · click to change");
+        }
+        if (_iconMatches.GetValueOrDefault(e.Id) is { } m)
+            return (m.Icon, $"{m.Icon.Title} ({m.Reason}) · click to change");
+        return (null, "Default player icon · click to pick one");
+    }
+
+    private async Task PickIconAsync(string? mediaId)
+    {
+        var e = _iconFor!;
+        _iconFor = null;
+        await Subscriptions.SetIconAsync(e.Id, mediaId);
+        e.IconMediaId = mediaId;
+        _message = mediaId is null
+            ? $"“{e.Title}” is back to its automatic icon. Applies on the next sync."
+            : $"Icon set for “{e.Title}”. Applies on the next sync.";
     }
 
     private void StartChangePlaylist()

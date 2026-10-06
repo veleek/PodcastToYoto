@@ -42,6 +42,12 @@ public sealed class Subscription
     public PlaylistOrder Order { get; set; } = PlaylistOrder.NewestFirst;
     public bool IncludeTrailers { get; set; }
 
+    /// <summary>
+    /// Opt-out of icon matching: true = leave the player's default icon. (Stored inverted so existing rows,
+    /// which get the column default false, keep icon matching on.)
+    /// </summary>
+    public bool UseDefaultIcon { get; set; }
+
     /// <summary>Null → global default.</summary>
     public TimeSpan? PollInterval { get; set; }
 
@@ -78,6 +84,9 @@ public sealed class Episode
     public string? ImageUrl { get; set; }
 
     public bool IsFavourite { get; set; }
+
+    /// <summary>Icon chosen by hand (Yoto media id); overrides automatic emoji matching. Null = automatic.</summary>
+    public string? IconMediaId { get; set; }
     public DateTimeOffset FirstSeenAt { get; set; }
     public DateTimeOffset? MissingFromFeedSince { get; set; }
 

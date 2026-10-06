@@ -1,0 +1,114 @@
+@using PodcastToYoto.Web.Icons
+
+<div class="modal-backdrop" @onclick="OnClose">
+    <div class="modal card" role="dialog" aria-label="Choose icon" @onclick:stopPropagation="true">
+        <div class="row card-head">
+            <h2>Icon for “@EpisodeTitle”</h2>
+            <button class="close" title="Close" @onclick="OnClose">✕</button>
+        </div>
+
+        <div class="row picker-current">
+            @if (CurrentMediaId is not null)
+            {
+                <span>Picked by hand:</span>
+                @if (Index.Find(CurrentMediaId) is { } cur)
+                {
+                    <img class="icon16" src="@cur.Url" alt="" /> <span>@cur.Title</span>
+                }
+                else
+                {
+                    <code>@CurrentMediaId</code>
+                }
+                <button @onclick="() => OnPick.InvokeAsync(null)">
+                    Use automatic@(AutoMatch is null ? " (none)" : $": {AutoMatch.Icon.Title}")
+                </button>
+            }
+            else if (AutoMatch is not null)
+            {
+                <span>Automatic:</span> <img class="icon16" src="@AutoMatch.Icon.Url" alt="" /> <span>@AutoMatch.Icon.Title</span>
+                <span class="muted">(@AutoMatch.Reason)</span>
+            }
+            else
+            {
+                <span class="muted">No automatic match: the player shows its default icon.</span>
+            }
+        </div>
+
+        <input class="text filter-full" placeholder="Search icons (e.g. tree, hat, train)…" @bind="_query" @bind:event="oninput" />
+
+        <div class="icon-scroll">
+            @if (string.IsNullOrWhiteSpace(_query))
+            {
+                @if (_suggested.Count > 0)
+                {
+                    <h3 class="icon-group">Suggested</h3>
+                    @Grid(_suggested)
+                }
+                @foreach (var group in Index.Groups)
+                {
+                    <h3 class="icon-group">@group.Name <span class="muted">(@group.Icons.Count)</span></h3>
+                    @Grid(group.Icons)
+                }
+            }
+            else
+            {
+                var results = Index.Search(_query, int.MaxValue);
+                if (results.Count == 0)
+                {
+                    <p class="muted">No icons match “@_query”.</p>
+                }
+                else
+                {
+                    <p class="muted">@results.Count icon(s)</p>
+                    @Grid(results)
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IconIndex Index { get; set; } = default!;
+    [Parameter, EditorRequired] public string EpisodeTitle { get; set; } = "";
+    [Parameter] public string? CurrentMediaId { get; set; }
+    [Parameter] public IconMatch? AutoMatch { get; set; }
+
+    /// <summary>Raised with the chosen media id, or null for "automatic".</summary>
+    [Parameter] public EventCallback<string?> OnPick { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string _query = "";
+    private IReadOnlyList<IconCandidate> _suggested = [];
+    private string? Selected => CurrentMediaId ?? AutoMatch?.Icon.MediaId;
+
+    protected override void OnInitialized()
+    {
+        // Suggestions: the current/automatic icon, then the best matches for each emoji in the title.
+        var list = new List<IconCandidate>();
+        if (CurrentMediaId is not null && Index.Find(CurrentMediaId) is { } current) list.Add(current);
+        if (AutoMatch is not null) list.Add(AutoMatch.Icon);
+        foreach (var cp in IconMatcher.Emojis(EpisodeTitle))
+        {
+            var words = IconMatcher.Keywords(cp);
+            if (words.Count > 0) list.AddRange(Index.Search(string.Join(" ", words.Take(1)), 6));
+        }
+        _suggested = list.DistinctBy(i => i.MediaId).Take(18).ToList();
+    }
+
+    private RenderFragment Grid(IReadOnlyList<IconCandidate> icons) => __builder =>
+    {
+        <div class="icon-grid">
+            @foreach (var icon in icons)
+            {
+                <button @key="icon.MediaId" class="icon-cell @(icon.MediaId == Selected ? "on" : "")" title="@IconTitle(icon)"
+                        @onclick="() => OnPick.InvokeAsync(icon.MediaId)">
+                    <img class="icon16 x2" src="@icon.Url" alt="" loading="lazy" />
+                    <span>@icon.Title</span>
+                </button>
+            }
+        </div>
+    };
+
+    private static string IconTitle(IconCandidate i) =>
+        i.Tags.Count == 0 ? i.Title : $"{i.Title} ({string.Join(", ", i.Tags)})";
+}

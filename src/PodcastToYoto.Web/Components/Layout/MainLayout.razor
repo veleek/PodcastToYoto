@@ -1,7 +1,12 @@
 @inherits LayoutComponentBase
+@inject IWebHostEnvironment Env
 
 <header class="top">
     <a href="/">🎧 Podcast → Yoto</a>
+    @if (!Env.IsProduction())
+    {
+        <span class="badge warn" title="Not the production instance">@Env.EnvironmentName.ToUpperInvariant()</span>
+    }
     <nav class="grow" style="display:flex;justify-content:flex-end;gap:1rem">
         <a href="/settings" style="font-weight:500">Settings</a>
     </nav>

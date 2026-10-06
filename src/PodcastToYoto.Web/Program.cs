@@ -91,8 +91,16 @@ builder.Services.AddKeyedSingleton("downloads", (_, _) => new HttpClient(Episode
 });
 builder.Services.AddSingleton(sp => new EpisodeDownloader(sp.GetRequiredKeyedService<HttpClient>("downloads"), tempDir));
 builder.Services.AddSingleton<AudioPipeline>();
+builder.Services.AddSingleton(sp => new PodcastToYoto.Web.Icons.IconCatalog(
+    sp.GetRequiredService<YotoApiClient>(), sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILogger<PodcastToYoto.Web.Icons.IconCatalog>>(), Path.Combine(dataDir, "icons.json")));
 builder.Services.AddSingleton<SyncActivity>();
-builder.Services.AddSingleton<INotificationSink, LogNotificationSink>();
+builder.Services.AddOptions<HomeAssistantOptions>().BindConfiguration(HomeAssistantOptions.Section);
+builder.Services.AddHttpClient(HomeAssistantChannel.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddSingleton<INotificationChannel, LogNotificationChannel>();
+builder.Services.AddSingleton<INotificationChannel, HomeAssistantChannel>();
+builder.Services.AddSingleton<Notifier>();
+builder.Services.AddSingleton<INotificationSink>(sp => sp.GetRequiredService<Notifier>());
 builder.Services.AddSingleton<SyncEngine>();
 builder.Services.AddSingleton<SyncScheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SyncScheduler>());

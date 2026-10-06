@@ -146,6 +146,14 @@ public sealed class SubscriptionService(
             .ExecuteUpdateAsync(u => u.SetProperty(e => e.IsFavourite, false), ct);
     }
 
+    /// <summary>Pin an icon for an episode (Yoto media id), or null to go back to automatic matching.</summary>
+    public async Task SetIconAsync(int episodeId, string? mediaId, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        await db.Episodes.Where(e => e.Id == episodeId)
+            .ExecuteUpdateAsync(u => u.SetProperty(e => e.IconMediaId, mediaId), ct);
+    }
+
     public async Task SetFavouriteAsync(int episodeId, bool favourite, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);

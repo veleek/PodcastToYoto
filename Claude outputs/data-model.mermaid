@@ -1,0 +1,69 @@
+erDiagram
+    YotoAccount {
+        int Id PK "always 1"
+        string ProtectedAccessToken "Data Protection encrypted"
+        string ProtectedRefreshToken "Data Protection encrypted, single-use"
+        datetime ExpiresAt
+        string Scope
+        string Status "Disconnected | Connected | NeedsReauth"
+        string LastError
+    }
+    Subscription {
+        int Id PK
+        string Name
+        string FeedUrl
+        bool Enabled
+        string YotoCardId "null = create on first sync"
+        string TitleOverride
+        int RecentCount "default 25"
+        int MaxTracks "default 100"
+        string Order "NewestFirst | OldestFirst"
+        bool IncludeTrailers
+        bool UseDefaultIcon "true = no emoji icon matching"
+        timespan PollInterval "null = global default"
+        string CoverSourceUrl
+        string CoverMediaUrl "re-uploaded when the feed image changes"
+        string FeedETag
+        string FeedLastModified
+        string LastPublishedHash "skip POST when unchanged"
+        string LastSyncResult
+        string LastError
+    }
+    Episode {
+        int Id PK
+        int SubscriptionId FK
+        string Guid "unique per subscription"
+        string Title
+        datetime PublishedAt
+        string EnclosureUrl
+        int DurationSeconds
+        string EpisodeType "full | bonus | trailer"
+        bool IsFavourite
+        string IconMediaId "hand-picked icon; null = automatic"
+        datetime MissingFromFeedSince "set instead of deleting"
+        int AudioId FK
+    }
+    Audio {
+        int Id PK
+        string SourceSha256 "unique; yoto:<sha> when adopted from an existing card"
+        string TranscodedSha256 "track URL = yoto:#<sha>"
+        int DurationSeconds
+        int FileSize
+        string ChannelsJson
+        string FormatJson
+    }
+    SyncRun {
+        int Id PK
+        int SubscriptionId FK
+        string Trigger "Schedule | Manual | Startup"
+        datetime StartedAt
+        datetime FinishedAt
+        string Result "Running | NoChange | Updated | Failed | DryRun"
+        int NewEpisodes
+        int Uploaded
+        string Message
+    }
+
+    Subscription ||--o{ Episode : has
+    Subscription ||--o{ SyncRun : "history (last ~200)"
+    Episode }o--o| Audio : "uploaded as"

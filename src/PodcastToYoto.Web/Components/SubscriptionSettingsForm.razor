@@ -48,6 +48,7 @@
     </div>
 
     <label class="check"><InputCheckbox @bind-Value="Model.IncludeTrailers" /> Include trailers</label>
+    <label class="check"><InputCheckbox @bind-Value="Model.MatchIcons" /> Episode icons: pick a Yoto icon from the emoji in each title</label>
     @if (LockEnabled)
     {
         <label class="check muted"><input type="checkbox" disabled /> Enabled (polled and synced automatically) · paused until you've reviewed the first sync</label>

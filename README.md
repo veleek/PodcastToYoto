@@ -2,7 +2,7 @@
 
 Keeps Yoto Make-Your-Own playlists in sync with podcast RSS feeds. Built first for *Silly Stories for Kids*.
 
-Status: **M1–M4 done; M5 (deploy) next**. See [docs/requirements.md](docs/requirements.md), [docs/design.md](docs/design.md), [docs/spikes.md](docs/spikes.md).
+Status: **M1–M6 done; deployed at yoto.example.com**. See [docs/requirements.md](docs/requirements.md), [docs/design.md](docs/design.md), [docs/spikes.md](docs/spikes.md).
 
 ## Layout
 
@@ -46,6 +46,30 @@ dotnet run --project src/PodcastToYoto.Web --launch-profile http
 | `Sync:DefaultPollInterval` | `01:00:00` | |
 | `Sync:RunOnStartup` | `true` | |
 | `Sync:DryRun` | `false` | |
+| `Notifications:HomeAssistant:BaseUrl` | (off) | e.g. `https://homeassistant.example.com` |
+| `Notifications:HomeAssistant:WebhookId` | | POSTs JSON to `/api/webhook/{id}`; no token needed |
+| `Notifications:HomeAssistant:Service` | | e.g. `notify.mobile_app_phone` or `persistent_notification.create` |
+| `Notifications:HomeAssistant:Token` | | long-lived access token, only for `Service` |
+| `Notifications:HomeAssistant:Events` | all | any of `PlaylistUpdated`, `SyncFailed`, `YotoNeedsLogin` |
+
+### Home Assistant
+
+Either (or both):
+
+- **Webhook** (most flexible): create an automation with a *Webhook* trigger, set `WebhookId` to its id. The body is
+  `{ kind, title, message, subscription_id, subscription, subscription_url, playlist_url }`, available as
+  `trigger.json.*` in the automation.
+- **Service call**: set `Service` and `Token` (Profile → Security → Long-lived access tokens). For `notify.*` services the
+  subscription page URL is passed as `data.url` / `data.clickAction` so tapping the phone notification opens it.
+
+Use **Settings → Send test notification** to check it.
+
+### Episode icons
+
+Each episode's icon is picked from Yoto's public icon library by matching the **emoji in its title** (via their
+Unicode names, e.g. 🪜 → "ladder") against icon titles and tags; if no emoji matches, the title's words are tried
+against icon titles. No match → the player's default icon. Turn it off per subscription in Settings. Needs the
+`user:icons:manage` scope (reconnect Yoto after upgrading).
 
 ## Deploy (container)
 

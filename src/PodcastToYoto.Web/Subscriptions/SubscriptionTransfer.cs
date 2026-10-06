@@ -20,6 +20,9 @@ public sealed class ExportedSubscription
 
     /// <summary>Episode GUIDs pinned as favourites.</summary>
     public List<string> Favourites { get; set; } = [];
+
+    /// <summary>Hand-picked icons: episode GUID → Yoto icon media id.</summary>
+    public Dictionary<string, string> Icons { get; set; } = new();
 }
 
 public sealed record ImportResult(int Created, int Updated, int FavouritesSet, int FavouritesNotFound, IReadOnlyList<string> Errors)
@@ -56,6 +59,7 @@ public sealed class SubscriptionTransfer(
                 Settings = SubscriptionSettings.From(s),
                 YotoCardId = s.YotoCardId,
                 Favourites = s.Episodes.Where(e => e.IsFavourite).Select(e => e.Guid).ToList(),
+                Icons = s.Episodes.Where(e => e.IconMediaId is not null).ToDictionary(e => e.Guid, e => e.IconMediaId!),
             }).ToList(),
         };
     }
@@ -103,7 +107,7 @@ public sealed class SubscriptionTransfer(
                     created++;
                 }
 
-                var (set, missing) = await ApplyFavouritesAsync(id, x.Favourites, ct);
+                var (set, missing) = await ApplyFavouritesAsync(id, x.Favourites, x.Icons, ct);
                 favSet += set;
                 favMissing += missing;
             }
@@ -119,12 +123,17 @@ public sealed class SubscriptionTransfer(
         return result;
     }
 
-    private async Task<(int Set, int Missing)> ApplyFavouritesAsync(int subscriptionId, List<string> guids, CancellationToken ct)
+    private async Task<(int Set, int Missing)> ApplyFavouritesAsync(
+        int subscriptionId, List<string> guids, Dictionary<string, string> icons, CancellationToken ct)
     {
         var wanted = guids.ToHashSet(StringComparer.Ordinal);
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var eps = await db.Episodes.Where(e => e.SubscriptionId == subscriptionId).ToListAsync(ct);
-        foreach (var e in eps) e.IsFavourite = wanted.Contains(e.Guid);
+        foreach (var e in eps)
+        {
+            e.IsFavourite = wanted.Contains(e.Guid);
+            e.IconMediaId = icons.GetValueOrDefault(e.Guid);
+        }
         await db.SaveChangesAsync(ct);
 
         var found = eps.Count(e => e.IsFavourite);

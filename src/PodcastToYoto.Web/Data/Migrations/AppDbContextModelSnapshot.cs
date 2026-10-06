@@ -83,6 +83,9 @@ namespace PodcastToYoto.Web.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("IconMediaId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ImageUrl")
                         .HasColumnType("TEXT");
 
@@ -179,6 +182,9 @@ namespace PodcastToYoto.Web.Data.Migrations
 
                     b.Property<string>("TitleOverride")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("UseDefaultIcon")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("YotoCardId")
                         .HasColumnType("TEXT");
