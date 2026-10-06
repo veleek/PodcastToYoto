@@ -2,7 +2,7 @@
 
 Keeps Yoto Make-Your-Own playlists in sync with podcast RSS feeds. Built first for *Silly Stories for Kids*.
 
-Status: **M1–M6 done; deployed at yoto.example.com**. See [docs/requirements.md](docs/requirements.md), [docs/design.md](docs/design.md), [docs/spikes.md](docs/spikes.md).
+Status: **M1–M7 done; deployed at yoto.example.com**. See [docs/requirements.md](docs/requirements.md), [docs/design.md](docs/design.md), [docs/spikes.md](docs/spikes.md).
 
 ## Layout
 
@@ -83,8 +83,12 @@ The image is self-contained: port 8080, non-root user (UID 1654), all state in `
 
 Getting the image onto the server, without a public registry:
 
-- **No registry:** `docker save podcast-to-yoto:latest | ssh <server> docker load` (or copy the tarball from `-SaveTo` and run `docker load -i`).
-- **Local registry:** run `registry:2` on this machine (`docker run -d -p 5000:5000 --restart unless-stopped --name registry registry:2`). Push with `-Registry <this-host>:5000 -Push`, and set `IMAGE=<this-host>:5000/podcast-to-yoto:latest` on the server. Plain-HTTP registries must be listed under `insecure-registries` in the server's `/etc/docker/daemon.json`.
+- **`./build.ps1 -Deploy`** (current setup): builds, `docker save`s the image, `scp`s it to the server (with progress), `docker load`s it and
+  restarts the container with compose. Defaults: `-DeployHost cake -DeployDir ~/services`. The server's `IMAGE` stays `podcast-to-yoto:latest`.
+  Sends the whole image (~230 MB) each time.
+- **Registry (optional, faster):** `./build.ps1 -Deploy -Registry <host:port>` pushes only changed layers and has the server `compose pull`.
+  Docker only talks plain HTTP to `localhost` registries, so either run the registry on the server bound to `127.0.0.1:5000` and push through
+  `ssh -N -L 5000:localhost:5000 cake`, or list the registry under `insecure-registries` in the server's `/etc/docker/daemon.json`.
 
 On the server, [`deploy/compose.yaml`](deploy/compose.yaml) lives at `services/yoto/compose.yaml` and is pulled into the parent services compose file:
 
@@ -106,4 +110,19 @@ cd .. && docker compose up -d podcast-to-yoto
 - The Yoto redirect URI registered in the developer portal must be `https://$YOTO_HOST/auth/callback`.
 - Remove the `yoto` router/service from Traefik's `dynamic_conf.yml` that pointed at the dev PC; otherwise two routers claim the host name.
 - **Moving existing state:** copy the dev `.data/` folder (`app.db` **and** `keys/`) into the server's `data/`, then re-run `sudo chown -R 1654:1654 data` (copied files are owned by your user, and SQLite fails with "attempt to write a readonly database"). Without `keys/` the stored Yoto tokens can't be decrypted and you'll need to reconnect. Don't keep the dev instance running against the same account afterwards: Yoto refresh tokens are single-use, so two instances will log each other out.
+
+### Backups
+
+A nightly backup (03:30 local time by default) writes `podcast-to-yoto-<timestamp>.zip` to `{data}/backups`, keeping the newest 14. Each zip holds
+`app.db` (SQLite online backup, safe while running), `keys/` (Data Protection keys, needed to decrypt the stored Yoto login) and `export.json`.
+**Settings → Backups** shows recent backups (downloadable) and has **Back up now**.
+
+| Key | Default | |
+|---|---|---|
+| `Backup:Enabled` | `true` | |
+| `Backup:Directory` | `backups` | relative to the data directory; point it at a separate mount to keep backups off the data volume |
+| `Backup:TimeOfDay` | `03:30` | container local time (`TZ`) |
+| `Backup:Keep` | `14` | |
+
+To restore: stop the container, unzip `app.db` and `keys/` into the data directory (replacing what's there), `chown -R 1654:1654`, start it again.
 

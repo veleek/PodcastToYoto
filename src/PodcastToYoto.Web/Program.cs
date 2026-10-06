@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PodcastToYoto.Web.Components;
+using PodcastToYoto.Web.Backups;
 using PodcastToYoto.Web.Data;
+using PodcastToYoto.Web.Icons;
 using PodcastToYoto.Feeds;
 using PodcastToYoto.Web.Options;
 using PodcastToYoto.Web.Subscriptions;
@@ -18,6 +20,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOptions<AppOptions>().BindConfiguration(AppOptions.Section).ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddOptions<YotoOptions>().BindConfiguration(YotoOptions.Section).ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddOptions<SyncOptions>().BindConfiguration(SyncOptions.Section);
+builder.Services.AddOptions<BackupOptions>().BindConfiguration(BackupOptions.Section);
 
 var appOptions = builder.Configuration.GetSection(AppOptions.Section).Get<AppOptions>() ?? new AppOptions();
 var dataDir = Path.GetFullPath(appOptions.DataDirectory, builder.Environment.ContentRootPath);
@@ -25,12 +28,14 @@ Directory.CreateDirectory(dataDir);
 
 // ---- Infrastructure ----------------------------------------------------------------------------
 builder.Services.AddSingleton(TimeProvider.System);
+var paths = new DataPaths(dataDir);
+builder.Services.AddSingleton(paths);
 
-builder.Services.AddDbContextFactory<AppDbContext>(o => o.UseSqlite($"Data Source={Path.Combine(dataDir, "app.db")}"));
+builder.Services.AddDbContextFactory<AppDbContext>(o => o.UseSqlite($"Data Source={paths.Database}"));
 
 builder.Services.AddDataProtection()
     .SetApplicationName("PodcastToYoto")
-    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDir, "keys")));
+    .PersistKeysToFileSystem(new DirectoryInfo(paths.Keys));
 
 // Behind Traefik: trust X-Forwarded-* (the app must only be reachable through the proxy).
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
@@ -83,7 +88,7 @@ builder.Services.AddSingleton<YotoAccountService>();
 builder.Services.AddSingleton(sp => new YotoAudioUploader(sp.GetRequiredService<YotoApiClient>()));
 
 // ---- Sync --------------------------------------------------------------------------------------
-var tempDir = Path.Combine(dataDir, "tmp");
+var tempDir = paths.Temp;
 if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); // leftovers from a crash
 builder.Services.AddKeyedSingleton("downloads", (_, _) => new HttpClient(EpisodeDownloader.CreateHandler())
 {
@@ -91,9 +96,7 @@ builder.Services.AddKeyedSingleton("downloads", (_, _) => new HttpClient(Episode
 });
 builder.Services.AddSingleton(sp => new EpisodeDownloader(sp.GetRequiredKeyedService<HttpClient>("downloads"), tempDir));
 builder.Services.AddSingleton<AudioPipeline>();
-builder.Services.AddSingleton(sp => new PodcastToYoto.Web.Icons.IconCatalog(
-    sp.GetRequiredService<YotoApiClient>(), sp.GetRequiredService<TimeProvider>(),
-    sp.GetRequiredService<ILogger<PodcastToYoto.Web.Icons.IconCatalog>>(), Path.Combine(dataDir, "icons.json")));
+builder.Services.AddSingleton<IconCatalog>();
 builder.Services.AddSingleton<SyncActivity>();
 builder.Services.AddOptions<HomeAssistantOptions>().BindConfiguration(HomeAssistantOptions.Section);
 builder.Services.AddHttpClient(HomeAssistantChannel.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(15));
@@ -104,6 +107,11 @@ builder.Services.AddSingleton<INotificationSink>(sp => sp.GetRequiredService<Not
 builder.Services.AddSingleton<SyncEngine>();
 builder.Services.AddSingleton<SyncScheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SyncScheduler>());
+
+// ---- Backups -----------------------------------------------------------------------------------
+// One instance serves both the UI (Settings → Back up now) and the hosted nightly loop.
+builder.Services.AddSingleton<BackupService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<BackupService>());
 
 // ---- Web ---------------------------------------------------------------------------------------
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -131,6 +139,10 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapHealthChecks("/health");
 app.MapYotoAuth();
+app.MapGet("/backups/{name}", (string name, BackupService backups) =>
+    backups.Resolve(name) is { } path
+        ? Results.File(path, "application/zip", name)
+        : Results.NotFound()).ExcludeFromDescription();
 app.MapGet("/export.json", async (SubscriptionTransfer transfer, TimeProvider time, CancellationToken ct) =>
 {
     var file = await transfer.ExportAsync(ct);

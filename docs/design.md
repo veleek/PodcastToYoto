@@ -198,6 +198,11 @@ Dev: `launchSettings.json` binds `http://0.0.0.0:5164`. Container: listens on 80
 
 6. **M6 Polish** ✅ *(2026-10-06)*: episode icons (plus a per-episode icon picker that overrides the automatic match) — emoji in the title → Unicode name → keyword match against Yoto's public icons (title +3, tags +1, shortest title wins; title-word fallback), per-subscription opt-out, shown in the episodes table; Home Assistant notifications (webhook and/or REST service call, event filter, test button) via a fan-out `Notifier` over `INotificationChannel`s.
 
+7. **M7 Ops** ✅ *(2026-10-06)*: nightly in-app backup (`BackupService`: SQLite online backup + Data Protection keys + JSON export → zip, keep 14, Settings card with download / back up now); `build.ps1 -Deploy` ships the image to the server (docker save → scp → docker load, or a registry with `-Registry`) and restarts it with compose over ssh.
+
 ## Later / ideas
 
-- Local registry for faster redeploys (only changed layers transfer).
+- Playlists combining several feeds (e.g. "Owen's Podcasts").
+- Integration tests for the sync engine against a fake Yoto API.
+- Uptime monitoring of `/health` from Home Assistant.
+

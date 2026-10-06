@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PodcastToYoto.Web.Options;
 using PodcastToYoto.Yoto;
 
 namespace PodcastToYoto.Web.Icons;
@@ -7,12 +8,13 @@ namespace PodcastToYoto.Web.Icons;
 /// Yoto's public icon library. Fetched lazily, kept in memory and in <c>{data}/icons.json</c>, and only re-fetched
 /// after a week (or when refreshed from Settings). A stale copy is still used if a refresh fails.
 /// </summary>
-public sealed class IconCatalog(YotoApiClient yoto, TimeProvider time, ILogger<IconCatalog> logger, string cachePath)
+public sealed class IconCatalog(YotoApiClient yoto, TimeProvider time, ILogger<IconCatalog> logger, DataPaths paths)
 {
     public static readonly TimeSpan Ttl = TimeSpan.FromDays(7);
     private static readonly TimeSpan RetryAfterFailure = TimeSpan.FromMinutes(10);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    private readonly string cachePath = paths.IconCache;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private IconIndex? _index;
     private bool _diskChecked;

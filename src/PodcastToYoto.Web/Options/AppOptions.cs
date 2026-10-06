@@ -65,3 +65,18 @@ public sealed class HomeAssistantOptions
         kind == PodcastToYoto.Web.Sync.NotificationKind.Test || Events.Count == 0 || Events.Contains(kind);
 }
 
+public sealed class BackupOptions
+{
+    public const string Section = "Backup";
+
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Where backup zips go. Relative paths resolve against the data directory. Default: {data}/backups.</summary>
+    public string Directory { get; set; } = "backups";
+
+    /// <summary>Local time of day for the nightly backup (container TZ applies).</summary>
+    public TimeOnly TimeOfDay { get; set; } = new(3, 30);
+
+    /// <summary>How many backups to keep; older ones are deleted.</summary>
+    public int Keep { get; set; } = 14;
+}

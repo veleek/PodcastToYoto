@@ -9,6 +9,8 @@
 @inject IOptionsMonitor<HomeAssistantOptions> HaOpts
 @inject PodcastToYoto.Web.Icons.IconCatalog IconCatalog
 @inject TimeProvider Time
+@inject PodcastToYoto.Web.Backups.BackupService Backups
+@inject IOptionsMonitor<BackupOptions> BackupOpts
 
 <PageTitle>Settings · Podcast → Yoto</PageTitle>
 
@@ -20,6 +22,34 @@
     <div class="row">
         <a class="button" href="/export.json" download>Download export</a>
     </div>
+</section>
+
+<section class="card">
+    <h2>Backups</h2>
+    <p class="muted">
+        Each backup is a zip of the database, the encryption keys for the stored Yoto login, and the JSON export.
+        Keep these private: with the keys, the zip can act as your Yoto login.
+    </p>
+    <dl class="kv">
+        <dt>Schedule</dt>
+        <dd>@(BackupOpts.CurrentValue.Enabled ? $"Daily at {BackupOpts.CurrentValue.TimeOfDay:HH:mm} · next {Format.Local(Backups.NextRun())}" : "Off")</dd>
+        <dt>Location</dt><dd><code>@Backups.BackupDirectory</code></dd>
+        <dt>Keeping</dt><dd>newest @BackupOpts.CurrentValue.Keep</dd>
+    </dl>
+    <div class="row">
+        <button @onclick="BackupNowAsync" disabled="@_busy">Back up now</button>
+        @if (_backupMessage is not null) { <span class="muted">@_backupMessage</span> }
+    </div>
+    @if (_backups.Count > 0)
+    {
+        <ul class="plain">
+            @foreach (var b in _backups.Take(5))
+            {
+                <li><a href="/backups/@b.Name" download>@b.Name</a> <span class="muted">· @((b.Size / 1024.0).ToString("F0")) KB</span></li>
+            }
+        </ul>
+        @if (_backups.Count > 5) { <p class="muted">…and @(_backups.Count - 5) older.</p> }
+    }
 </section>
 
 <section class="card">
@@ -122,9 +152,31 @@
     private ExportFile? _file;
     private IReadOnlyList<string>? _testResults;
     private string? _iconMessage;
+    private string? _backupMessage;
+    private IReadOnlyList<PodcastToYoto.Web.Backups.BackupFile> _backups = [];
+
+    private async Task BackupNowAsync()
+    {
+        _busy = true;
+        try
+        {
+            var b = await Backups.BackupNowAsync();
+            _backupMessage = $"Wrote {b.Name}.";
+        }
+        catch (Exception ex)
+        {
+            _backupMessage = $"Backup failed: {ex.Message}";
+        }
+        finally
+        {
+            _backups = Backups.List();
+            _busy = false;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
+        _backups = Backups.List();
         try
         {
             await IconCatalog.GetAsync(); // loads from the disk cache, so the counts above are filled in

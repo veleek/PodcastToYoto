@@ -14,6 +14,7 @@ services:
       - Yoto__ClientId=${YOTO_CLIENT_ID:?Set YOTO_CLIENT_ID in .env}
       # - Sync__DefaultPollInterval=01:00:00
       # - Sync__DryRun=true
+      - Backup__Directory=/backups
       # Home Assistant notifications (see README). Webhook needs no token; Service needs HA_TOKEN.
       - Notifications__HomeAssistant__BaseUrl=${HA_BASE_URL:-}
       - Notifications__HomeAssistant__WebhookId=${HA_WEBHOOK_ID}
@@ -24,6 +25,7 @@ services:
       # - Notifications__HomeAssistant__Events__1=YotoNeedsLogin
     volumes:
       - ./data:/data
+      - ./backups:/backups
     # No `ports:`: only reachable through Traefik on the shared network.
     networks:
       - services
