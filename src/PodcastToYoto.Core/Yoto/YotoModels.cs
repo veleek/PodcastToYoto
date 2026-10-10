@@ -91,6 +91,12 @@ public sealed record YotoIcon(string MediaId, string Title, string? Url, IReadOn
     public string Ref => $"yoto:#{MediaId}";
 }
 
+/// <summary>A custom icon uploaded to the user's account. Referenced in content as <c>yoto:#{MediaId}</c>.</summary>
+public sealed record YotoCustomIcon(string MediaId, string? Url)
+{
+    public string Ref => $"yoto:#{MediaId}";
+}
+
 public sealed record YotoCardSummary(string CardId, string? Title, DateTimeOffset? UpdatedAt, JsonElement Raw);
 
 public sealed class YotoApiException(string message, int statusCode, string? body) : Exception(message)

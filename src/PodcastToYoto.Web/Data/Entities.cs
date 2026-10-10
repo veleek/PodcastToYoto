@@ -2,6 +2,12 @@ namespace PodcastToYoto.Web.Data;
 
 public enum AccountStatus { Disconnected, Connected, NeedsReauth }
 public enum PlaylistOrder { NewestFirst, OldestFirst }
+
+/// <summary>How a playlist orders tracks drawn from several podcasts.</summary>
+public enum TrackOrder { NewestFirst, OldestFirst, GroupedByPodcast }
+
+/// <summary>When a podcast's own logo icon (generated from its artwork and uploaded to Yoto) is shown on the player.</summary>
+public enum LogoIconMode { Off, Fallback, Always }
 public enum SyncTrigger { Schedule, Manual, Startup }
 public enum SyncResult { Running, NoChange, Updated, Failed, DryRun }
 
@@ -26,19 +32,74 @@ public sealed class YotoAccount
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
-public sealed class Subscription
+/// <summary>A Yoto playlist (MYO card) kept up to date from one or more podcast subscriptions.</summary>
+public sealed class Playlist
 {
     public int Id { get; set; }
+
+    /// <summary>Title the Yoto playlist is published with.</summary>
     public required string Name { get; set; }
-    public required string FeedUrl { get; set; }
+
+    /// <summary>Polled and synced automatically.</summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>Target Yoto playlist; null until created on first sync.</summary>
     public string? YotoCardId { get; set; }
 
-    public string? TitleOverride { get; set; }
-    public int RecentCount { get; set; } = 25;
+    /// <summary>Cap on tracks across all podcasts (Yoto's limit is 100).</summary>
     public int MaxTracks { get; set; } = 100;
+
+    public TrackOrder Order { get; set; } = TrackOrder.NewestFirst;
+
+    /// <summary>Null → global default.</summary>
+    public TimeSpan? PollInterval { get; set; }
+
+    /// <summary>Cover image to use instead of the first podcast's artwork. Null = first podcast's artwork.</summary>
+    public string? CoverImageUrl { get; set; }
+
+    /// <summary>The image <see cref="CoverMediaUrl"/> was uploaded from; re-uploaded when the desired cover changes.</summary>
+    public string? CoverSourceUrl { get; set; }
+    public string? CoverMediaUrl { get; set; }
+
+    public string? LastPublishedHash { get; set; }
+    public DateTimeOffset? LastSyncedAt { get; set; }
+    public SyncResult? LastSyncResult { get; set; }
+    public string? LastError { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public List<Subscription> Subscriptions { get; set; } = [];
+
+    /// <summary>The image the playlist cover should be made from.</summary>
+    public string? DesiredCoverUrl => CoverImageUrl ?? Subscriptions
+        .Where(s => s.Enabled && s.CoverSourceUrl is not null)
+        .OrderBy(s => s.Position).ThenBy(s => s.Id)
+        .Select(s => s.CoverSourceUrl)
+        .FirstOrDefault();
+}
+
+/// <summary>One podcast feed feeding a <see cref="Playlist"/>, with its own episode selection rules.</summary>
+public sealed class Subscription
+{
+    public int Id { get; set; }
+    public int PlaylistId { get; set; }
+    public Playlist? Playlist { get; set; }
+
+    /// <summary>Order within the playlist: preference order, and group order when grouping by podcast.</summary>
+    public int Position { get; set; }
+
+    public required string Name { get; set; }
+    public required string FeedUrl { get; set; }
+
+    /// <summary>Included in the playlist. Excluded podcasts aren't polled or published.</summary>
+    public bool Enabled { get; set; } = true;
+
+    public int RecentCount { get; set; } = 25;
+
+    /// <summary>Most episodes this podcast contributes (recent + favourites).</summary>
+    public int MaxTracks { get; set; } = 100;
+
+    /// <summary>Order of this podcast's episodes when the playlist groups by podcast.</summary>
     public PlaylistOrder Order { get; set; } = PlaylistOrder.NewestFirst;
     public bool IncludeTrailers { get; set; }
 
@@ -48,19 +109,22 @@ public sealed class Subscription
     /// </summary>
     public bool UseDefaultIcon { get; set; }
 
-    /// <summary>Null → global default.</summary>
-    public TimeSpan? PollInterval { get; set; }
+    public LogoIconMode LogoIcon { get; set; } = LogoIconMode.Off;
 
+    /// <summary>Custom 16x16 icon generated from the podcast's artwork and uploaded to Yoto.</summary>
+    public string? LogoIconMediaId { get; set; }
+
+    /// <summary>Where Yoto serves <see cref="LogoIconMediaId"/> from (for display).</summary>
+    public string? LogoIconUrl { get; set; }
+
+    /// <summary>The feed's artwork.</summary>
     public string? CoverSourceUrl { get; set; }
-    public string? CoverMediaUrl { get; set; }
 
     public string? FeedETag { get; set; }
     public string? FeedLastModified { get; set; }
     public DateTimeOffset? LastPolledAt { get; set; }
 
-    public string? LastPublishedHash { get; set; }
-    public DateTimeOffset? LastSyncedAt { get; set; }
-    public SyncResult? LastSyncResult { get; set; }
+    /// <summary>Last feed error ("Feed: …"), cleared by a successful poll.</summary>
     public string? LastError { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
@@ -113,8 +177,8 @@ public sealed class Audio
 public sealed class SyncRun
 {
     public int Id { get; set; }
-    public int SubscriptionId { get; set; }
-    public Subscription? Subscription { get; set; }
+    public int PlaylistId { get; set; }
+    public Playlist? Playlist { get; set; }
 
     public SyncTrigger Trigger { get; set; }
     public DateTimeOffset StartedAt { get; set; }

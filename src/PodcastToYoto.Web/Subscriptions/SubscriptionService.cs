@@ -4,25 +4,6 @@ using PodcastToYoto.Web.Data;
 
 namespace PodcastToYoto.Web.Subscriptions;
 
-public sealed record SubscriptionSummary(
-    int Id,
-    string Name,
-    string FeedUrl,
-    bool Enabled,
-    string? YotoCardId,
-    string? CoverSourceUrl,
-    int EpisodeCount,
-    int FavouriteCount,
-    DateTimeOffset? LastPolledAt,
-    DateTimeOffset? LastSyncedAt,
-    SyncResult? LastSyncResult,
-    string? LastError,
-    string? TitleOverride)
-{
-    /// <summary>Title the Yoto playlist is published with.</summary>
-    public string PlaylistTitle => TitleOverride ?? Name;
-}
-
 public sealed record PollOutcome(bool Ok, bool NotModified, MergeResult Merge, string? Error)
 {
     public string Describe() => !Ok ? $"Feed check failed: {Error}"
@@ -30,37 +11,18 @@ public sealed record PollOutcome(bool Ok, bool NotModified, MergeResult Merge, s
         : $"{Merge.Added} new, {Merge.Updated} updated, {Merge.MarkedMissing} no longer in feed, {Merge.Reappeared} back in feed.";
 }
 
-/// <summary>Subscription CRUD, feed polling and favourites.</summary>
+/// <summary>Podcast subscriptions within a playlist: CRUD, ordering, feed polling, favourites and icons.</summary>
 public sealed class SubscriptionService(
     IDbContextFactory<AppDbContext> dbFactory,
     FeedFetcher fetcher,
     TimeProvider time,
     ILogger<SubscriptionService> logger)
 {
-    public async Task<IReadOnlyList<SubscriptionSummary>> ListAsync(CancellationToken ct = default)
+    /// <summary>The playlist a subscription belongs to (null if it doesn't exist).</summary>
+    public async Task<int?> GetPlaylistIdAsync(int id, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        return await db.Subscriptions
-            .AsNoTracking()
-            .OrderBy(s => s.Name)
-            .Select(s => new SubscriptionSummary(
-                s.Id, s.Name, s.FeedUrl, s.Enabled, s.YotoCardId, s.CoverSourceUrl,
-                s.Episodes.Count, s.Episodes.Count(e => e.IsFavourite),
-                s.LastPolledAt, s.LastSyncedAt, s.LastSyncResult, s.LastError, s.TitleOverride))
-            .ToListAsync(ct);
-    }
-
-    /// <summary>Subscription with all episodes (newest first). Detached snapshot for display.</summary>
-    public async Task<Subscription?> GetAsync(int id, CancellationToken ct = default)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var s = await db.Subscriptions
-            .AsNoTracking()
-            .Include(x => x.Episodes)
-            .SingleOrDefaultAsync(x => x.Id == id, ct);
-
-        s?.Episodes.Sort((a, b) => Nullable.Compare(b.PublishedAt, a.PublishedAt));
-        return s;
+        return await db.Subscriptions.Where(s => s.Id == id).Select(s => (int?)s.PlaylistId).SingleOrDefaultAsync(ct);
     }
 
     public async Task<PodcastFeed> PreviewAsync(string feedUrl, CancellationToken ct = default)
@@ -69,20 +31,28 @@ public sealed class SubscriptionService(
         return result.Feed ?? throw new InvalidOperationException("Feed returned no content.");
     }
 
-    /// <summary>Creates the subscription and immediately polls the feed to populate episodes.</summary>
-    public async Task<(int Id, PollOutcome Poll)> CreateAsync(SubscriptionSettings settings, CancellationToken ct = default)
+    /// <summary>Adds a podcast to the end of a playlist and immediately polls the feed to populate episodes.</summary>
+    public async Task<(int Id, PollOutcome Poll)> AddAsync(int playlistId, SubscriptionSettings settings, CancellationToken ct = default)
     {
         int id;
         await using (var db = await dbFactory.CreateDbContextAsync(ct))
         {
-            var s = new Subscription { Name = settings.Name, FeedUrl = settings.FeedUrl, CreatedAt = time.GetUtcNow() };
+            var position = await db.Subscriptions.Where(x => x.PlaylistId == playlistId).Select(x => (int?)x.Position).MaxAsync(ct) ?? -1;
+            var s = new Subscription
+            {
+                PlaylistId = playlistId,
+                Position = position + 1,
+                Name = settings.Name,
+                FeedUrl = settings.FeedUrl,
+                CreatedAt = time.GetUtcNow(),
+            };
             settings.ApplyTo(s);
             db.Subscriptions.Add(s);
             await db.SaveChangesAsync(ct);
             id = s.Id;
         }
 
-        logger.LogInformation("Subscription {Id} '{Name}' created for {FeedUrl}", id, settings.Name, settings.FeedUrl);
+        logger.LogInformation("Podcast {Id} '{Name}' added to playlist {PlaylistId} from {FeedUrl}", id, settings.Name, playlistId, settings.FeedUrl);
         return (id, await PollAsync(id, ct));
     }
 
@@ -103,40 +73,40 @@ public sealed class SubscriptionService(
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>Removes a podcast (and its episode history) from its playlist.</summary>
     public async Task DeleteAsync(int id, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         await db.Subscriptions.Where(x => x.Id == id).ExecuteDeleteAsync(ct);
-        logger.LogInformation("Subscription {Id} deleted", id);
+        logger.LogInformation("Podcast {Id} removed", id);
     }
 
-    /// <summary>Set the target playlist id without touching its contents (used by import).</summary>
-    public async Task SetPlaylistAsync(int id, string cardId, CancellationToken ct = default)
+    /// <summary>Moves a podcast up (negative) or down (positive) in its playlist's order.</summary>
+    public async Task MoveAsync(int id, int delta, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var playlistId = await db.Subscriptions.Where(x => x.Id == id).Select(x => x.PlaylistId).SingleAsync(ct);
+        var subs = await db.Subscriptions.Where(x => x.PlaylistId == playlistId).OrderBy(x => x.Position).ThenBy(x => x.Id).ToListAsync(ct);
+
+        var from = subs.FindIndex(x => x.Id == id);
+        var to = Math.Clamp(from + delta, 0, subs.Count - 1);
+        if (from == to) return;
+
+        var s = subs[from];
+        subs.RemoveAt(from);
+        subs.Insert(to, s);
+        for (var i = 0; i < subs.Count; i++) subs[i].Position = i;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Use a custom icon (already uploaded to Yoto) as this podcast's logo icon; null clears it.</summary>
+    public async Task SetLogoIconAsync(int id, string? mediaId, string? url, LogoIconMode mode, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         await db.Subscriptions.Where(x => x.Id == id).ExecuteUpdateAsync(u => u
-            .SetProperty(x => x.YotoCardId, cardId)
-            .SetProperty(x => x.LastPublishedHash, (string?)null), ct);
-    }
-
-    /// <summary>Forget the target playlist so the next sync creates a new one (e.g. it was deleted in the Yoto app).</summary>
-    public async Task ClearPlaylistAsync(int id, CancellationToken ct = default)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
-        await db.Subscriptions.Where(x => x.Id == id).ExecuteUpdateAsync(u => u
-            .SetProperty(x => x.YotoCardId, (string?)null)
-            .SetProperty(x => x.LastPublishedHash, (string?)null)
-            .SetProperty(x => x.CoverMediaUrl, (string?)null), ct);
-    }
-
-    public async Task<IReadOnlyList<SyncRun>> GetRecentRunsAsync(int id, int count = 10, CancellationToken ct = default)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
-        return await db.SyncRuns.AsNoTracking()
-            .Where(r => r.SubscriptionId == id)
-            .OrderByDescending(r => r.StartedAt)
-            .Take(count)
-            .ToListAsync(ct);
+            .SetProperty(x => x.LogoIconMediaId, mediaId)
+            .SetProperty(x => x.LogoIconUrl, url)
+            .SetProperty(x => x.LogoIcon, mediaId is null ? LogoIconMode.Off : mode), ct);
     }
 
     public async Task<int> ClearFavouritesAsync(int subscriptionId, CancellationToken ct = default)
@@ -175,7 +145,7 @@ public sealed class SubscriptionService(
         }
         catch (Exception ex) when (ex is HttpRequestException or FormatException or System.Xml.XmlException or TaskCanceledException && !ct.IsCancellationRequested)
         {
-            logger.LogWarning(ex, "Feed poll failed for subscription {Id} ({FeedUrl})", id, s.FeedUrl);
+            logger.LogWarning(ex, "Feed poll failed for podcast {Id} ({FeedUrl})", id, s.FeedUrl);
             s.LastPolledAt = now;
             s.LastError = $"Feed: {ex.Message}";
             await db.SaveChangesAsync(ct);
@@ -195,17 +165,14 @@ public sealed class SubscriptionService(
         s.FeedETag = result.ETag;
         s.FeedLastModified = result.LastModified;
 
-        if (!string.Equals(s.CoverSourceUrl, feed.ImageUrl, StringComparison.Ordinal))
-        {
-            s.CoverSourceUrl = feed.ImageUrl;
-            s.CoverMediaUrl = null; // re-upload on next sync
-        }
+        // The playlist re-uploads its cover when this changes.
+        s.CoverSourceUrl = feed.ImageUrl;
 
         var merge = EpisodeMerger.Merge(s, feed.Episodes, now);
         await db.SaveChangesAsync(ct);
 
         if (merge.Added > 0)
-            logger.LogInformation("Subscription {Id}: {Added} new episode(s) in '{Feed}'", id, merge.Added, feed.Title);
+            logger.LogInformation("Podcast {Id}: {Added} new episode(s) in '{Feed}'", id, merge.Added, feed.Title);
 
         return new PollOutcome(true, false, merge, null);
     }

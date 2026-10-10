@@ -163,6 +163,26 @@ public sealed class YotoApiClient
         return list;
     }
 
+    /// <summary>
+    /// POST /media/displayIcons/user/me/upload — upload a custom 16x16 icon (PNG). With <paramref name="autoConvert"/> Yoto
+    /// resizes the image itself; without, it must already be 16x16. Re-uploading identical bytes returns the same icon.
+    /// </summary>
+    public async Task<YotoCustomIcon> UploadCustomIconAsync(byte[] png, string? filename = null, bool autoConvert = false, CancellationToken ct = default)
+    {
+        var path = $"media/displayIcons/user/me/upload?autoConvert={(autoConvert ? "true" : "false")}";
+        if (!string.IsNullOrEmpty(filename)) path += $"&filename={Uri.EscapeDataString(filename)}";
+
+        var body = new ByteArrayContent(png);
+        body.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        using var doc = await SendJsonAsync(HttpMethod.Post, path, body, ct);
+
+        var icon = doc.RootElement.TryGetProperty("displayIcon", out var d) ? d : doc.RootElement;
+        var mediaId = icon.TryGetProperty("mediaId", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() : null;
+        if (string.IsNullOrEmpty(mediaId))
+            throw new YotoApiException("Icon upload returned no mediaId.", 200, doc.RootElement.GetRawText());
+        return new YotoCustomIcon(mediaId, icon.TryGetProperty("url", out var u) && u.ValueKind == JsonValueKind.String ? u.GetString() : null);
+    }
+
     // ---- Plumbing ------------------------------------------------------------------------
 
     private async Task<JsonDocument> SendJsonAsync(HttpMethod method, string relative, HttpContent? content, CancellationToken ct, bool allowNotFound = false)

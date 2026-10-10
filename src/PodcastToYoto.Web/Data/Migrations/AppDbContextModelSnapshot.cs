@@ -117,14 +117,66 @@ namespace PodcastToYoto.Web.Data.Migrations
                     b.ToTable("Episodes");
                 });
 
-            modelBuilder.Entity("PodcastToYoto.Web.Data.Subscription", b =>
+            modelBuilder.Entity("PodcastToYoto.Web.Data.Playlist", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("CoverImageUrl")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("CoverMediaUrl")
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("CoverSourceUrl")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastPublishedHash")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastSyncResult")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("LastSyncedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MaxTracks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Order")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<TimeSpan?>("PollInterval")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("YotoCardId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Playlists");
+                });
+
+            modelBuilder.Entity("PodcastToYoto.Web.Data.Subscription", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("CoverSourceUrl")
                         .HasColumnType("TEXT");
@@ -154,14 +206,15 @@ namespace PodcastToYoto.Web.Data.Migrations
                     b.Property<long?>("LastPolledAt")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("LastPublishedHash")
+                    b.Property<string>("LogoIcon")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("LastSyncResult")
+                    b.Property<string>("LogoIconMediaId")
                         .HasColumnType("TEXT");
 
-                    b.Property<long?>("LastSyncedAt")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("LogoIconUrl")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("MaxTracks")
                         .HasColumnType("INTEGER");
@@ -174,22 +227,21 @@ namespace PodcastToYoto.Web.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<TimeSpan?>("PollInterval")
-                        .HasColumnType("TEXT");
+                    b.Property<int>("PlaylistId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int>("RecentCount")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("TitleOverride")
-                        .HasColumnType("TEXT");
-
                     b.Property<bool>("UseDefaultIcon")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("YotoCardId")
-                        .HasColumnType("TEXT");
-
                     b.HasKey("Id");
+
+                    b.HasIndex("PlaylistId", "Position");
 
                     b.ToTable("Subscriptions");
                 });
@@ -209,14 +261,14 @@ namespace PodcastToYoto.Web.Data.Migrations
                     b.Property<int>("NewEpisodes")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("PlaylistId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Result")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<long>("StartedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("SubscriptionId")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Trigger")
@@ -228,7 +280,7 @@ namespace PodcastToYoto.Web.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SubscriptionId", "StartedAt");
+                    b.HasIndex("PlaylistId", "StartedAt");
 
                     b.ToTable("SyncRuns");
                 });
@@ -286,15 +338,31 @@ namespace PodcastToYoto.Web.Data.Migrations
                     b.Navigation("Subscription");
                 });
 
-            modelBuilder.Entity("PodcastToYoto.Web.Data.SyncRun", b =>
+            modelBuilder.Entity("PodcastToYoto.Web.Data.Subscription", b =>
                 {
-                    b.HasOne("PodcastToYoto.Web.Data.Subscription", "Subscription")
-                        .WithMany()
-                        .HasForeignKey("SubscriptionId")
+                    b.HasOne("PodcastToYoto.Web.Data.Playlist", "Playlist")
+                        .WithMany("Subscriptions")
+                        .HasForeignKey("PlaylistId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Subscription");
+                    b.Navigation("Playlist");
+                });
+
+            modelBuilder.Entity("PodcastToYoto.Web.Data.SyncRun", b =>
+                {
+                    b.HasOne("PodcastToYoto.Web.Data.Playlist", "Playlist")
+                        .WithMany()
+                        .HasForeignKey("PlaylistId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Playlist");
+                });
+
+            modelBuilder.Entity("PodcastToYoto.Web.Data.Playlist", b =>
+                {
+                    b.Navigation("Subscriptions");
                 });
 
             modelBuilder.Entity("PodcastToYoto.Web.Data.Subscription", b =>

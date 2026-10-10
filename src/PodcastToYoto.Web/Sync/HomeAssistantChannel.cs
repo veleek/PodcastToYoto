@@ -33,7 +33,7 @@ public sealed class HomeAssistantChannel(
 
         var http = httpFactory.CreateClient(HttpClientName);
         var baseUrl = o.BaseUrl!.TrimEnd('/');
-        var title = c.SubscriptionName is null || n.Kind == NotificationKind.PlaylistUpdated ? n.Title : $"{n.Title}: {c.SubscriptionName}";
+        var title = c.PlaylistName is null || n.Kind == NotificationKind.PlaylistUpdated ? n.Title : $"{n.Title}: {c.PlaylistName}";
 
         if (!string.IsNullOrWhiteSpace(o.WebhookId))
         {
@@ -42,10 +42,14 @@ public sealed class HomeAssistantChannel(
                 kind = n.Kind.ToString(),
                 title,
                 message = n.Message,
-                subscription_id = n.SubscriptionId,
-                subscription = c.SubscriptionName,
-                subscription_url = c.SubscriptionUrl,
+                playlist_id = n.PlaylistId,
+                playlist = c.PlaylistName,
+                page_url = c.PageUrl,
                 playlist_url = c.PlaylistUrl,
+                // Pre-playlist names, kept so existing automations keep working (they now describe the playlist).
+                subscription_id = n.PlaylistId,
+                subscription = c.PlaylistName,
+                subscription_url = c.PageUrl,
             };
             using var resp = await http.PostAsJsonAsync($"{baseUrl}/api/webhook/{Uri.EscapeDataString(o.WebhookId)}", payload, ct);
             await EnsureOkAsync(resp, "webhook", ct);
@@ -55,7 +59,7 @@ public sealed class HomeAssistantChannel(
         {
             var (domain, service) = SplitService(o.Service);
             object body = domain == "notify"
-                ? new { title, message = n.Message, data = new { url = c.SubscriptionUrl, clickAction = c.SubscriptionUrl } }
+                ? new { title, message = n.Message, data = new { url = c.PageUrl, clickAction = c.PageUrl } }
                 : new { title, message = n.Message };
 
             using var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/api/services/{domain}/{service}")

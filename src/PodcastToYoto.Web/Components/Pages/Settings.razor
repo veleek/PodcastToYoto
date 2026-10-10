@@ -18,7 +18,7 @@
 
 <section class="card">
     <h2>Backup</h2>
-    <p class="muted">Subscriptions, their settings, target playlists and favourites. Episode history and uploads are not included; they are rebuilt from the feeds.</p>
+    <p class="muted">Playlists, their podcasts, settings, target Yoto playlists, favourites and icons. Episode history and uploads are not included; they are rebuilt from the feeds.</p>
     <div class="row">
         <a class="button" href="/export.json" download>Download export</a>
     </div>
@@ -55,8 +55,9 @@
 <section class="card">
     <h2>Import</h2>
     <p class="muted">
-        Subscriptions matching an existing one (same feed URL and playlist) are updated; others are created and their feeds checked.
-        Favourites in the file replace the current favourites of each imported subscription.
+        Playlists matching an existing one (same Yoto playlist, or same name when neither has one) are updated; others are created.
+        Podcasts are matched by feed URL; new ones are added and their feeds checked. Favourites in the file replace the current
+        favourites of each imported podcast. Exports from before playlists held several podcasts import as one-podcast playlists.
     </p>
     <InputFile OnChange="LoadFileAsync" accept=".json,application/json" />
     @if (_error is not null)
@@ -66,11 +67,12 @@
     @if (_file is not null)
     {
         <div class="toast">
-            <div>Export from @Format.Local(_file.ExportedAt) with @_file.Subscriptions.Count subscription(s):</div>
+            @{ var playlists = _file.AllPlaylists(); }
+            <div>Export from @Format.Local(_file.ExportedAt) with @playlists.Count playlist(s):</div>
             <ul class="plain">
-                @foreach (var s in _file.Subscriptions)
+                @foreach (var p in playlists)
                 {
-                    <li>@s.Settings.Name <span class="muted">· </span>@if (s.YotoCardId is null) { <span class="muted">new playlist</span> } else { <CardLink CardId="@s.YotoCardId" Title="@(s.Settings.TitleOverride ?? s.Settings.Name)" /> }<span class="muted"> · @s.Favourites.Count favourites</span></li>
+                    <li>@p.Settings.Name <span class="muted">· </span>@if (p.YotoCardId is null) { <span class="muted">new Yoto playlist</span> } else { <CardLink CardId="@p.YotoCardId" Title="Yoto" /> }<span class="muted"> · @string.Join(", ", p.Podcasts.Select(x => x.Settings.Name)) · @p.Podcasts.Sum(x => x.Favourites.Count) favourites</span></li>
                 }
             </ul>
             <div class="row" style="margin-top:.5rem">

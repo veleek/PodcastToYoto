@@ -2,7 +2,7 @@
 
 Keeps Yoto Make-Your-Own playlists in sync with podcast RSS feeds. Built first for *Silly Stories for Kids*.
 
-Status: **M1–M7 done; deployed at yoto.example.com**. See [docs/requirements.md](docs/requirements.md), [docs/design.md](docs/design.md), [docs/spikes.md](docs/spikes.md).
+Status: **M1–M8 done; deployed at yoto.example.com**. See [docs/requirements.md](docs/requirements.md), [docs/design.md](docs/design.md), [docs/spikes.md](docs/spikes.md).
 
 ## Layout
 
@@ -31,7 +31,7 @@ dotnet run --project src/PodcastToYoto.Web --launch-profile http
 ```
 
 - Migrations are applied automatically on startup.
-- The dev instance has its own `.data/` and its own Yoto login. Never share a DB between dev and prod: refresh tokens are single-use, so the two would log each other out. Point dev subscriptions at test playlists so both instances don't sync the same card.
+- The dev instance has its own `.data/` and its own Yoto login. Never share a DB between dev and prod: refresh tokens are single-use, so the two would log each other out. Point dev playlists at test Yoto playlists so both instances don't sync the same card.
 - `App:PublicBaseUrl` must be the externally reachable URL. The Yoto redirect URI is `{PublicBaseUrl}/auth/callback` and has to be registered in the Yoto developer portal.
 - Runtime state (SQLite DB, Data Protection keys) lives in `.data/` at the repo root in Development (git-ignored) and `/data` in the container. `src/PodcastToYoto.Web/Data/` is source code (EF model + migrations) and is committed.
 
@@ -57,10 +57,11 @@ dotnet run --project src/PodcastToYoto.Web --launch-profile http
 Either (or both):
 
 - **Webhook** (most flexible): create an automation with a *Webhook* trigger, set `WebhookId` to its id. The body is
-  `{ kind, title, message, subscription_id, subscription, subscription_url, playlist_url }`, available as
-  `trigger.json.*` in the automation.
+  `{ kind, title, message, playlist_id, playlist, page_url, playlist_url }`, available as `trigger.json.*` in the
+  automation. (`subscription_id`, `subscription` and `subscription_url` are still sent, with the playlist's values, so
+  automations written before playlists held several podcasts keep working.)
 - **Service call**: set `Service` and `Token` (Profile → Security → Long-lived access tokens). For `notify.*` services the
-  subscription page URL is passed as `data.url` / `data.clickAction` so tapping the phone notification opens it.
+  playlist page URL is passed as `data.url` / `data.clickAction` so tapping the phone notification opens it.
 
 Use **Settings → Send test notification** to check it.
 
@@ -68,8 +69,28 @@ Use **Settings → Send test notification** to check it.
 
 Each episode's icon is picked from Yoto's public icon library by matching the **emoji in its title** (via their
 Unicode names, e.g. 🪜 → "ladder") against icon titles and tags; if no emoji matches, the title's words are tried
-against icon titles. No match → the player's default icon. Turn it off per subscription in Settings. Needs the
+against icon titles. No match → the player's default icon. Turn it off per podcast in its settings. Needs the
 `user:icons:manage` scope (reconnect Yoto after upgrading).
+
+**Podcast logo icons**: for podcasts whose titles don't map onto Yoto's icons, a podcast's settings page can make
+16×16 icons from its artwork (whole image or centre crops; natural, bold or posterised colours), upload the chosen one
+to Yoto as a custom icon, and use it when an episode has no other icon or on every episode. A hand-picked episode icon
+always wins.
+
+## Playlists and podcasts
+
+A **playlist** is one Yoto MYO playlist; it draws from one or more **podcasts**.
+
+- Each podcast has its own rules: newest N episodes, favourites, a max episodes cap, trailers, icon settings, and its
+  own order (used when the playlist groups by podcast). It can be excluded without being removed.
+- The playlist has the Yoto playlist, title, cover (first podcast's artwork unless overridden), sync schedule, a max
+  total tracks cap (oldest non-favourites are dropped first, across podcasts), and the track order: by release date
+  (newest or oldest first) or grouped by podcast in the playlist's podcast order.
+- Suggested podcasts on the add-podcast page: Silly Stories for Kids, But Why, Flip and Mozi, Who Smarted?
+  (`src/PodcastToYoto.Web/Subscriptions/PodcastSuggestions.cs`).
+
+Upgrading migrates each existing subscription into a one-podcast playlist with the same Yoto playlist, title, cover,
+schedule and history, so nothing is re-uploaded or republished. Exports from before then import the same way.
 
 ## Deploy (container)
 

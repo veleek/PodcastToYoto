@@ -1,0 +1,186 @@
+@using PodcastToYoto.Web.Icons
+@using PodcastToYoto.Yoto
+@inject LogoIconGenerator Generator
+@inject YotoApiClient Yoto
+@inject SubscriptionService Subscriptions
+
+@* Generate a 16x16 icon from the podcast's artwork, upload it to Yoto and use it for this podcast's episodes. *@
+<section class="card">
+    <h2>Podcast logo icon</h2>
+    <p class="muted">
+        For podcasts whose episodes don't match Yoto's icons well: make a 16×16 icon from the artwork and show it on the player,
+        either when an episode has no other icon or on every episode. Hand-picked episode icons still win.
+    </p>
+
+    @if (Podcast.LogoIconMediaId is not null)
+    {
+        <div class="logo-current">
+            @if (Podcast.LogoIconUrl is not null) { <img class="icon16 x4" src="@Podcast.LogoIconUrl" alt="Current logo icon" /> }
+            <div>
+                <div>Current icon: <strong>@ModeText(Podcast.LogoIcon)</strong></div>
+                <div class="row" style="margin-top:.4rem">
+                    @foreach (var mode in new[] { LogoIconMode.Fallback, LogoIconMode.Always, LogoIconMode.Off })
+                    {
+                        if (mode != Podcast.LogoIcon)
+                        {
+                            <button disabled="@_busy" @onclick="() => SetModeAsync(mode)">@ModeButton(mode)</button>
+                        }
+                    }
+                    <button class="danger" disabled="@_busy" @onclick="RemoveAsync">Remove</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="row" style="margin-top:.75rem">
+        <input class="text grow" placeholder="Image URL (default: the podcast's artwork)" @bind="_source" @bind:event="oninput" />
+        <button @onclick="GenerateAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_source))">
+            @(Podcast.LogoIconMediaId is null ? "Generate icons" : "Make a new one")
+        </button>
+    </div>
+
+    @if (_variants is not null)
+    {
+        <div class="logo-variants">
+            @foreach (var v in _variants)
+            {
+                <button @key="v.Key" class="icon-cell @(v == _selected ? "on" : "")" title="@v.Crop · @v.Style" @onclick="() => _selected = v">
+                    <img class="icon16 x4" src="@v.DataUrl" alt="" />
+                    <span>@v.Crop<br />@v.Style</span>
+                </button>
+            }
+        </div>
+        @if (_selected is not null)
+        {
+            <div class="row" style="margin-top:.75rem">
+                <img class="icon16 x2" src="@_selected.DataUrl" alt="" title="Actual size ×2" />
+                <select @bind="_mode">
+                    <option value="@LogoIconMode.Fallback">Use when no other icon matches</option>
+                    <option value="@LogoIconMode.Always">Use on every episode</option>
+                </select>
+                <button class="primary" disabled="@_busy" @onclick="UploadAsync">Upload to Yoto and use</button>
+            </div>
+        }
+    }
+
+    @if (_message is not null) { <div class="toast">@_message</div> }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Subscription Podcast { get; set; } = default!;
+
+    /// <summary>Raised after the podcast's logo icon or its mode changed.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private string _source = "";
+    private IReadOnlyList<LogoIconVariant>? _variants;
+    private LogoIconVariant? _selected;
+    private LogoIconMode _mode = LogoIconMode.Fallback;
+    private bool _busy;
+    private string? _message;
+    private int _podcastId;
+
+    protected override void OnParametersSet()
+    {
+        if (_podcastId == Podcast.Id) return;
+        _podcastId = Podcast.Id;
+        _source = Podcast.CoverSourceUrl ?? "";
+        _variants = null;
+        _selected = null;
+    }
+
+    private static string ModeText(LogoIconMode m) => m switch
+    {
+        LogoIconMode.Fallback => "used when no other icon matches",
+        LogoIconMode.Always => "used on every episode",
+        _ => "not used",
+    };
+
+    private static string ModeButton(LogoIconMode m) => m switch
+    {
+        LogoIconMode.Fallback => "Use as fallback",
+        LogoIconMode.Always => "Use on every episode",
+        _ => "Don't use",
+    };
+
+    private async Task GenerateAsync()
+    {
+        _busy = true;
+        _message = null;
+        try
+        {
+            _variants = await Generator.GenerateAsync(_source.Trim());
+            _selected = null;
+        }
+        catch (Exception ex)
+        {
+            _message = $"Couldn't make icons from that image: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task UploadAsync()
+    {
+        if (_selected is null) return;
+        _busy = true;
+        _message = null;
+        try
+        {
+            var icon = await Yoto.UploadCustomIconAsync(_selected.Png, $"{Slug(Podcast.Name)}-logo.png");
+            await Subscriptions.SetLogoIconAsync(Podcast.Id, icon.MediaId, icon.Url ?? _selected.DataUrl, _mode);
+            _variants = null;
+            _selected = null;
+            _message = "Icon uploaded. It's used from the next sync.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex is YotoApiException { StatusCode: 403 }
+                ? "Yoto refused the upload (needs the user:icons:manage scope). Reconnect Yoto on the dashboard."
+                : $"Upload failed: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SetModeAsync(LogoIconMode mode)
+    {
+        _busy = true;
+        try
+        {
+            await Subscriptions.SetLogoIconAsync(Podcast.Id, Podcast.LogoIconMediaId, Podcast.LogoIconUrl, mode);
+            _message = "Saved. Applies on the next sync.";
+            await OnChanged.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RemoveAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Subscriptions.SetLogoIconAsync(Podcast.Id, null, null, LogoIconMode.Off);
+            _message = "Logo icon removed. Applies on the next sync.";
+            await OnChanged.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string Slug(string name)
+    {
+        var s = new string(name.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray()).Trim('-');
+        return s.Length == 0 ? "podcast" : s.Length > 40 ? s[..40] : s;
+    }
+}

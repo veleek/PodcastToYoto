@@ -7,13 +7,16 @@ namespace PodcastToYoto.Web.Sync;
 
 public enum NotificationKind { PlaylistUpdated, SyncFailed, YotoNeedsLogin, Test }
 
-public sealed record Notification(NotificationKind Kind, string Title, string Message, int? SubscriptionId = null);
+public sealed record Notification(NotificationKind Kind, string Title, string Message, int? PlaylistId = null);
 
 /// <summary>A notification with links resolved, as handed to each channel.</summary>
+/// <param name="PlaylistName">Name of the playlist the notification is about.</param>
+/// <param name="PageUrl">This app's page for the playlist (or the dashboard).</param>
+/// <param name="PlaylistUrl">The playlist in the Yoto web app.</param>
 public sealed record NotificationContext(
     Notification Notification,
-    string? SubscriptionName,
-    string? SubscriptionUrl,
+    string? PlaylistName,
+    string? PageUrl,
     string? PlaylistUrl);
 
 /// <summary>What the app calls to notify. Fans out to every <see cref="INotificationChannel"/>.</summary>
@@ -76,10 +79,10 @@ public sealed class Notifier(
     private async Task<NotificationContext> ResolveAsync(Notification n, CancellationToken ct)
     {
         var baseUrl = app.Value.PublicBaseUrl.TrimEnd('/');
-        if (n.SubscriptionId is not { } id) return new NotificationContext(n, null, baseUrl, null);
+        if (n.PlaylistId is not { } id) return new NotificationContext(n, null, baseUrl, null);
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var s = await db.Subscriptions.AsNoTracking()
+        var s = await db.Playlists.AsNoTracking()
             .Where(x => x.Id == id)
             .Select(x => new { x.Name, x.YotoCardId })
             .SingleOrDefaultAsync(ct);
@@ -87,7 +90,7 @@ public sealed class Notifier(
         return new NotificationContext(
             n,
             s?.Name,
-            $"{baseUrl}/subscriptions/{id}",
+            $"{baseUrl}/playlists/{id}",
             s?.YotoCardId is { } card ? $"https://my.yotoplay.com/cards/{card}" : null);
     }
 }

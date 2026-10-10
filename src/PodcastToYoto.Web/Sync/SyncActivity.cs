@@ -7,22 +7,22 @@ public sealed class SyncActivity
 {
     private readonly ConcurrentDictionary<int, string> _current = new();
 
-    /// <summary>Raised with the subscription id whenever its activity changes (on a background thread).</summary>
+    /// <summary>Raised with the playlist id whenever its activity changes (on a background thread).</summary>
     public event Action<int>? Changed;
 
-    public string? Get(int subscriptionId) => _current.TryGetValue(subscriptionId, out var s) ? s : null;
+    public string? Get(int playlistId) => _current.TryGetValue(playlistId, out var s) ? s : null;
 
-    public bool IsBusy(int subscriptionId) => _current.ContainsKey(subscriptionId);
+    public bool IsBusy(int playlistId) => _current.ContainsKey(playlistId);
 
-    public void Set(int subscriptionId, string message)
+    public void Set(int playlistId, string message)
     {
-        _current[subscriptionId] = message;
-        Changed?.Invoke(subscriptionId);
+        _current[playlistId] = message;
+        Changed?.Invoke(playlistId);
     }
 
-    public void Clear(int subscriptionId)
+    public void Clear(int playlistId)
     {
-        _current.TryRemove(subscriptionId, out _);
-        Changed?.Invoke(subscriptionId);
+        _current.TryRemove(playlistId, out _);
+        Changed?.Invoke(playlistId);
     }
 }

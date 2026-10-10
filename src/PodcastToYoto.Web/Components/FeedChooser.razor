@@ -1,0 +1,96 @@
+@using PodcastToYoto.Feeds
+@inject SubscriptionService Subscriptions
+
+@* Step 1 of adding a podcast: pick a suggestion or paste a feed URL, then preview it. *@
+<section class="card">
+    <h2>@Heading</h2>
+    @{ var suggestions = PodcastSuggestions.All.Where(s => !Exclude.Contains(s.FeedUrl)).ToList(); }
+    @if (suggestions.Count > 0)
+    {
+        <div class="pills" style="margin-bottom:.6rem">
+            <span class="muted">Suggestions:</span>
+            @foreach (var s in suggestions)
+            {
+                <button type="button" class="chip" title="@s.Note · @s.FeedUrl" disabled="@_busy" @onclick="() => PickAsync(s.FeedUrl)">@s.Name</button>
+            }
+        </div>
+    }
+    <div class="row">
+        <input class="text grow" placeholder="https://… RSS feed URL" @bind="_url" @bind:event="oninput" @onkeydown="OnKey" />
+        <button @onclick="PreviewAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_url))">Preview</button>
+    </div>
+    @if (_error is not null)
+    {
+        <div class="alert" style="margin-top:.75rem">@_error</div>
+    }
+</section>
+
+@if (_feed is not null)
+{
+    <section class="card">
+        <div class="sub-head">
+            @if (_feed.ImageUrl is not null)
+            {
+                <img src="@_feed.ImageUrl" alt="" />
+            }
+            <div class="grow">
+                <h2>@_feed.Title</h2>
+                <div class="muted">@_feed.Author · @_feed.Episodes.Count episodes</div>
+                <ul class="plain">
+                    @foreach (var e in _feed.Episodes.Take(5))
+                    {
+                        <li>@Format.Date(e.Published) — @e.Title <span class="muted">(@Format.Duration((long?)e.Duration?.TotalSeconds))</span></li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter] public string Heading { get; set; } = "1. Podcast feed";
+
+    /// <summary>Feeds not to suggest (already in the playlist).</summary>
+    [Parameter] public IReadOnlySet<string> Exclude { get; set; } = new HashSet<string>();
+
+    /// <summary>Raised with the trimmed feed URL and its parsed feed after a successful preview; null feed when cleared.</summary>
+    [Parameter] public EventCallback<(string Url, PodcastFeed? Feed)> OnPreviewed { get; set; }
+
+    private string _url = "";
+    private PodcastFeed? _feed;
+    private string? _error;
+    private bool _busy;
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await PreviewAsync();
+    }
+
+    private async Task PickAsync(string url)
+    {
+        _url = url;
+        await PreviewAsync();
+    }
+
+    private async Task PreviewAsync()
+    {
+        _busy = true;
+        _error = null;
+        _feed = null;
+        var url = _url.Trim();
+        await OnPreviewed.InvokeAsync((url, null));
+        try
+        {
+            _feed = await Subscriptions.PreviewAsync(url);
+            await OnPreviewed.InvokeAsync((url, _feed));
+        }
+        catch (Exception ex)
+        {
+            _error = $"Couldn't read that feed: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

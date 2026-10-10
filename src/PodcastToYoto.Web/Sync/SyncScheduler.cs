@@ -11,7 +11,7 @@ namespace PodcastToYoto.Web.Sync;
 public sealed record NextSync(DateTimeOffset? At, TimeSpan Interval, string? PausedReason);
 
 /// <summary>
-/// Runs syncs: on startup (optional), whenever a subscription's poll interval has elapsed, and on demand ("Sync now").
+/// Runs playlist syncs: on startup (optional), whenever a playlist's poll interval has elapsed, and on demand ("Sync now").
 /// Syncs are serialized by <see cref="SyncEngine"/>.
 /// </summary>
 public sealed class SyncScheduler(
@@ -26,22 +26,22 @@ public sealed class SyncScheduler(
 
     private readonly Channel<int> _requests = Channel.CreateUnbounded<int>();
 
-    /// <summary>Queue a manual sync. Returns false if one is already queued or running for this subscription.</summary>
-    public bool RequestSync(int subscriptionId)
+    /// <summary>Queue a manual sync. Returns false if one is already queued or running for this playlist.</summary>
+    public bool RequestSync(int playlistId)
     {
-        if (activity.IsBusy(subscriptionId)) return false;
-        activity.Set(subscriptionId, "Queued…");
-        return _requests.Writer.TryWrite(subscriptionId);
+        if (activity.IsBusy(playlistId)) return false;
+        activity.Set(playlistId, "Queued…");
+        return _requests.Writer.TryWrite(playlistId);
     }
 
-    /// <summary>When the scheduler will next sync this subscription (same rule as <see cref="GetDueAsync"/>).</summary>
-    public async Task<NextSync> GetNextSyncAsync(int subscriptionId, CancellationToken ct = default)
+    /// <summary>When the scheduler will next sync this playlist (same rule as <see cref="GetDueAsync"/>).</summary>
+    public async Task<NextSync> GetNextSyncAsync(int playlistId, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var defaultInterval = options.CurrentValue.DefaultPollInterval;
 
-        var s = await db.Subscriptions.AsNoTracking()
-            .Where(x => x.Id == subscriptionId)
+        var s = await db.Playlists.AsNoTracking()
+            .Where(x => x.Id == playlistId)
             .Select(x => new { x.Enabled, x.PollInterval })
             .SingleOrDefaultAsync(ct);
         if (s is null) return new NextSync(null, defaultInterval, "Not found");
@@ -53,7 +53,7 @@ public sealed class SyncScheduler(
         if (account?.Status != AccountStatus.Connected) return new NextSync(null, interval, "Paused until Yoto is connected");
 
         var starts = await db.SyncRuns.AsNoTracking()
-            .Where(r => r.SubscriptionId == subscriptionId && r.Result != SyncResult.DryRun)
+            .Where(r => r.PlaylistId == playlistId && r.Result != SyncResult.DryRun)
             .Select(r => r.StartedAt)
             .ToListAsync(ct);
 
@@ -107,17 +107,17 @@ public sealed class SyncScheduler(
             return [];
         }
 
-        var subs = await db.Subscriptions.AsNoTracking()
+        var subs = await db.Playlists.AsNoTracking()
             .Where(s => s.Enabled)
             .Select(s => new { s.Id, s.PollInterval })
             .ToListAsync(ct);
 
-        // Small table (pruned to ~200 runs per subscription); aggregate in memory to keep the SQL trivial.
+        // Small table (pruned to ~200 runs per playlist); aggregate in memory to keep the SQL trivial.
         var lastRuns = (await db.SyncRuns.AsNoTracking()
                 .Where(r => r.Result != SyncResult.DryRun)
-                .Select(r => new { r.SubscriptionId, r.StartedAt })
+                .Select(r => new { r.PlaylistId, r.StartedAt })
                 .ToListAsync(ct))
-            .GroupBy(r => r.SubscriptionId)
+            .GroupBy(r => r.PlaylistId)
             .ToDictionary(g => g.Key, g => g.Max(r => r.StartedAt));
 
         var now = time.GetUtcNow();

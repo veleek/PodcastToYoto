@@ -1,0 +1,90 @@
+@page "/playlists/new"
+@page "/subscriptions/new"
+@using PodcastToYoto.Feeds
+@inject PlaylistService Playlists
+@inject NavigationManager Nav
+@inject PlaylistAdopter Adopter
+@inject SubscriptionNotices Notices
+
+<PageTitle>New playlist · Podcast → Yoto</PageTitle>
+
+<h1 style="font-size:1.2rem">New playlist</h1>
+<p class="muted">Start with one podcast; add more from the playlist's page afterwards.</p>
+
+<FeedChooser Heading="1. First podcast" OnPreviewed="OnPreviewed" />
+
+@if (_feed is not null)
+{
+    <section class="card">
+        <h2>2. Yoto playlist</h2>
+        <PlaylistPicker @bind-SelectedCardId="_cardId" @bind-KeepAsFavourites="_keepTracks" />
+    </section>
+
+    <section class="card">
+        <h2>3. Settings</h2>
+        @if (_cardId is null)
+        {
+            <label class="form">Playlist title <span class="muted">(blank = podcast name)</span>
+                <input class="text" @bind="_title" placeholder="@_settings.Name" />
+            </label>
+        }
+        else
+        {
+            <p class="muted">The playlist keeps its current title in Yoto; you can rename it in the playlist's settings.</p>
+        }
+        <h3 class="sub-label">Podcast</h3>
+        <SubscriptionSettingsForm Model="_settings" OnValidSubmit="CreateAsync" SubmitLabel="Create playlist" Busy="_busy" LockFeedUrl="true" />
+        <p class="muted">Track order, the total track limit and the sync interval are playlist settings; change them on the next page.</p>
+        @if (_error is not null) { <div class="alert">@_error</div> }
+    </section>
+}
+
+@code {
+    private PodcastFeed? _feed;
+    private SubscriptionSettings _settings = new();
+    private string? _title;
+    private string? _error;
+    private bool _busy;
+    private string? _cardId;
+    private bool _keepTracks;
+
+    private void OnPreviewed((string Url, PodcastFeed? Feed) e)
+    {
+        _feed = e.Feed;
+        if (e.Feed is not null) _settings = new SubscriptionSettings { Name = e.Feed.Title, FeedUrl = e.Url };
+    }
+
+    private async Task CreateAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var playlist = new PlaylistSettings
+            {
+                Name = string.IsNullOrWhiteSpace(_title) ? _settings.Name : _title.Trim(),
+                // Attaching an existing playlist pauses automatic syncing until the plan has been reviewed.
+                Enabled = _cardId is null,
+            };
+            var (id, _, _) = await Playlists.CreateAsync(playlist, _settings);
+            if (_cardId is not null)
+            {
+                try
+                {
+                    var r = await Adopter.AttachAsync(id, _cardId, _keepTracks);
+                    Notices.Set(id, r.Describe());
+                }
+                catch (Exception ex)
+                {
+                    Notices.Set(id, $"Playlist created, but attaching the Yoto playlist failed: {ex.Message}");
+                }
+            }
+            Nav.NavigateTo($"/playlists/{id}");
+        }
+        catch (Exception ex)
+        {
+            _error = $"Couldn't create playlist: {ex.Message}";
+            _busy = false;
+        }
+    }
+}

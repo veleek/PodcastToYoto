@@ -1,0 +1,68 @@
+@inject Microsoft.Extensions.Options.IOptionsMonitor<PodcastToYoto.Web.Options.SyncOptions> SyncOptions
+
+<EditForm Model="Model" OnValidSubmit="OnValidSubmit" class="form">
+    <DataAnnotationsValidator />
+
+    <label>Playlist title <span class="muted">(as shown in the Yoto app)</span>
+        <InputText @bind-Value="Model.Name" />
+        <ValidationMessage For="() => Model.Name" />
+    </label>
+
+    <div class="grid2">
+        <label>
+            <span class="cap">Max tracks on card <span class="muted">(all podcasts together)</span></span>
+            <InputNumber @bind-Value="Model.MaxTracks" min="1" max="100" ParsingErrorMessage="Enter a whole number." />
+            <ValidationMessage For="() => Model.MaxTracks" />
+        </label>
+
+        <label>
+            <span class="cap">Track order</span>
+            <InputSelect @bind-Value="Model.Order">
+                <option value="@TrackOrder.NewestFirst">By release date, newest first</option>
+                <option value="@TrackOrder.OldestFirst">By release date, oldest first</option>
+                <option value="@TrackOrder.GroupedByPodcast">Grouped by podcast (in the podcast order below)</option>
+            </InputSelect>
+        </label>
+
+        <label>
+            <span class="cap">Sync interval (minutes) <span class="muted">(blank = default: every @Format.Interval(SyncOptions.CurrentValue.DefaultPollInterval))</span></span>
+            <InputNumber @bind-Value="Model.PollIntervalMinutes" min="5" placeholder="@((int)SyncOptions.CurrentValue.DefaultPollInterval.TotalMinutes)" ParsingErrorMessage="Enter a whole number of minutes, or leave blank." />
+            <ValidationMessage For="() => Model.PollIntervalMinutes" />
+        </label>
+
+        <label>
+            <span class="cap">Cover image URL <span class="muted">(blank = first podcast's artwork)</span></span>
+            <InputText @bind-Value="Model.CoverImageUrl" />
+            <ValidationMessage For="() => Model.CoverImageUrl" />
+        </label>
+    </div>
+
+    @if (LockEnabled)
+    {
+        <label class="check muted"><input type="checkbox" disabled /> Enabled (polled and synced automatically) · paused until you've reviewed the first sync</label>
+    }
+    else
+    {
+        <label class="check"><InputCheckbox @bind-Value="Model.Enabled" /> Enabled (polled and synced automatically)</label>
+    }
+
+    @if (ShowSubmit)
+    {
+        <div class="row">
+            <button type="submit" class="primary" disabled="@Busy">@SubmitLabel</button>
+            @ChildContent
+        </div>
+    }
+</EditForm>
+
+@code {
+    [Parameter, EditorRequired] public PlaylistSettings Model { get; set; } = default!;
+    [Parameter] public EventCallback<EditContext> OnValidSubmit { get; set; }
+    [Parameter] public string SubmitLabel { get; set; } = "Save";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool ShowSubmit { get; set; } = true;
+
+    /// <summary>Show "Enabled" as off and read-only (e.g. when attaching an existing playlist, which pauses syncing).</summary>
+    [Parameter] public bool LockEnabled { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

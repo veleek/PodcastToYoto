@@ -1,116 +1,73 @@
-@page "/subscriptions/new"
+@page "/playlists/{PlaylistId:int}/podcasts/new"
 @using PodcastToYoto.Feeds
+@inject PlaylistService Playlists
 @inject SubscriptionService Subscriptions
 @inject NavigationManager Nav
-@inject PlaylistAdopter Adopter
 @inject SubscriptionNotices Notices
 
-<PageTitle>Add subscription · Podcast → Yoto</PageTitle>
+<PageTitle>Add podcast · Podcast → Yoto</PageTitle>
 
-<h1 style="font-size:1.2rem">Add subscription</h1>
-
-<section class="card">
-    <h2>1. Podcast feed</h2>
-    <div class="row">
-        <input class="text grow" placeholder="https://… RSS feed URL" @bind="_url" @bind:event="oninput" @onkeydown="OnKey" />
-        <button @onclick="PreviewAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_url))">Preview</button>
-    </div>
-    @if (_error is not null)
-    {
-        <div class="alert" style="margin-top:.75rem">@_error</div>
-    }
-</section>
-
-@if (_feed is not null)
+@if (_playlist is null)
 {
-    <section class="card">
-        <div class="sub-head">
-            @if (_feed.ImageUrl is not null)
+    <p class="muted">@(_notFound ? "Playlist not found." : "Loading…")</p>
+}
+else
+{
+    <h1 style="font-size:1.2rem">Add a podcast to <a href="/playlists/@PlaylistId">@_playlist.Name</a></h1>
+
+    <FeedChooser Heading="1. Podcast" Exclude="_existing" OnPreviewed="OnPreviewed" />
+
+    @if (_feed is not null)
+    {
+        <section class="card">
+            <h2>2. Settings</h2>
+            @if (_existing.Contains(_settings.FeedUrl))
             {
-                <img src="@_feed.ImageUrl" alt="" />
+                <div class="alert">This podcast is already in the playlist.</div>
             }
-            <div class="grow">
-                <h2>@_feed.Title</h2>
-                <div class="muted">@_feed.Author · @_feed.Episodes.Count episodes</div>
-                <ul class="plain">
-                    @foreach (var e in _feed.Episodes.Take(5))
-                    {
-                        <li>@Format.Date(e.Published) — @e.Title <span class="muted">(@Format.Duration((long?)e.Duration?.TotalSeconds))</span></li>
-                    }
-                </ul>
-            </div>
-        </div>
-    </section>
-
-    <section class="card">
-        <h2>2. Yoto playlist</h2>
-        <PlaylistPicker @bind-SelectedCardId="_cardId" @bind-KeepAsFavourites="_keepTracks" />
-    </section>
-
-    <section class="card">
-        <h2>3. Settings</h2>
-        <SubscriptionSettingsForm Model="_settings" OnValidSubmit="CreateAsync" SubmitLabel="Create subscription" Busy="_busy" LockFeedUrl="true" LockEnabled="@(_cardId is not null)" />
-    </section>
+            <SubscriptionSettingsForm Model="_settings" OnValidSubmit="AddAsync" SubmitLabel="Add podcast" Busy="_busy" LockFeedUrl="true" />
+            @if (_error is not null) { <div class="alert">@_error</div> }
+        </section>
+    }
 }
 
 @code {
-    private string _url = "";
+    [Parameter] public int PlaylistId { get; set; }
+
+    private Playlist? _playlist;
+    private bool _notFound;
+    private HashSet<string> _existing = [];
     private PodcastFeed? _feed;
     private SubscriptionSettings _settings = new();
     private string? _error;
     private bool _busy;
-    private string? _cardId;
-    private bool _keepTracks;
 
-    private async Task OnKey(KeyboardEventArgs e)
+    protected override async Task OnParametersSetAsync()
     {
-        if (e.Key == "Enter") await PreviewAsync();
+        _playlist = await Playlists.GetAsync(PlaylistId);
+        _notFound = _playlist is null;
+        _existing = _playlist?.Subscriptions.Select(s => s.FeedUrl).ToHashSet(StringComparer.Ordinal) ?? [];
     }
 
-    private async Task PreviewAsync()
+    private void OnPreviewed((string Url, PodcastFeed? Feed) e)
+    {
+        _feed = e.Feed;
+        if (e.Feed is not null) _settings = new SubscriptionSettings { Name = e.Feed.Title, FeedUrl = e.Url };
+    }
+
+    private async Task AddAsync()
     {
         _busy = true;
         _error = null;
-        _feed = null;
         try
         {
-            var url = _url.Trim();
-            _feed = await Subscriptions.PreviewAsync(url);
-            _settings = new SubscriptionSettings { Name = _feed.Title, FeedUrl = url };
+            var (_, poll) = await Subscriptions.AddAsync(PlaylistId, _settings);
+            Notices.Set(PlaylistId, $"Added {_settings.Name}. {poll.Describe()} It's published on the next sync.");
+            Nav.NavigateTo($"/playlists/{PlaylistId}");
         }
         catch (Exception ex)
         {
-            _error = $"Couldn't read that feed: {ex.Message}";
-        }
-        finally
-        {
-            _busy = false;
-        }
-    }
-
-    private async Task CreateAsync()
-    {
-        _busy = true;
-        try
-        {
-            var (id, _) = await Subscriptions.CreateAsync(_settings);
-            if (_cardId is not null)
-            {
-                try
-                {
-                    var r = await Adopter.AttachAsync(id, _cardId, _keepTracks);
-                    Notices.Set(id, r.Describe());
-                }
-                catch (Exception ex)
-                {
-                    Notices.Set(id, $"Subscription created, but attaching the playlist failed: {ex.Message}");
-                }
-            }
-            Nav.NavigateTo($"/subscriptions/{id}");
-        }
-        catch (Exception ex)
-        {
-            _error = $"Couldn't create subscription: {ex.Message}";
+            _error = $"Couldn't add podcast: {ex.Message}";
             _busy = false;
         }
     }

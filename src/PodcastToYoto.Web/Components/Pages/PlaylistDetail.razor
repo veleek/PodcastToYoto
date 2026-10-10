@@ -1,0 +1,473 @@
+@page "/playlists/{Id:int}"
+@implements IDisposable
+@using PodcastToYoto.Web.Icons
+@inject PlaylistService Playlists
+@inject SubscriptionService Subscriptions
+@inject SyncScheduler Scheduler
+@inject PlaylistAdopter Adopter
+@inject SubscriptionNotices Notices
+@inject IconCatalog Icons
+@inject SyncEngine Engine
+@inject SyncActivity Activity
+@inject NavigationManager Nav
+@inject TimeProvider Time
+
+<PageTitle>@(_playlist?.Name ?? "Playlist") · Podcast → Yoto</PageTitle>
+
+@if (_notFound)
+{
+    <section class="card"><h2>Not found</h2><p><a href="/">Back to dashboard</a></p></section>
+}
+else if (_playlist is null)
+{
+    <p class="muted">Loading…</p>
+}
+else
+{
+    var cover = _playlist.DesiredCoverUrl;
+    <section class="card">
+        <div class="sub-hero @(cover is null ? "no-cover" : "")">
+            @if (cover is not null)
+            {
+                <img class="hero-img" src="@cover" alt="" />
+            }
+            <div class="hero-title">
+                <h2>@_playlist.Name</h2>
+                <div class="muted">@PodcastCountText</div>
+            </div>
+            <div class="hero-body">
+                <dl class="kv">
+                    <dt>Yoto playlist</dt>
+                    <dd>
+                        @if (_playlist.YotoCardId is null) { <span>Created on first sync</span> }
+                        else { <CardLink CardId="@_playlist.YotoCardId" Title="@_playlist.Name" /> }
+                    </dd>
+                    <dt>Planned</dt>
+                    <dd>@_plan!.Episodes.Count of max @_playlist.MaxTracks tracks · @OrderText(_playlist.Order) · @_plan.Episodes.Count(e => e.AudioId is not null) uploaded</dd>
+                    <dt>Last sync</dt>
+                    <dd>
+                        @Format.Ago(_playlist.LastSyncedAt, Time.GetUtcNow())
+                        @if (_playlist.LastSyncResult is { } result) { <span class="badge after @BadgeClass(result)">@Format.Result(result)</span> }
+                    </dd>
+                    <dt>Next sync</dt>
+                    <dd>
+                        @if (_next is null) { <span>—</span> }
+                        else if (_next.PausedReason is not null) { <span class="muted">@_next.PausedReason</span> }
+                        else
+                        {
+                            <span title="@Format.Local(_next.At)">@Format.Until(_next.At, Time.GetUtcNow())</span>
+                            <span class="muted"> · every @Format.Interval(_next.Interval)@(_playlist.PollInterval is null ? " (default)" : "")</span>
+                        }
+                    </dd>
+                    @if (_playlist.LastError is not null)
+                    {
+                        <dt>Error</dt><dd class="err-text">@_playlist.LastError</dd>
+                    }
+                </dl>
+                <div class="row">
+                    <button class="primary" @onclick="SyncNow" disabled="@(_activity is not null)">Sync now</button>
+                    <button @onclick="DryRunAsync" disabled="@(_activity is not null)">Dry run</button>
+                    <button @onclick="PollAsync" disabled="@(_busy || _activity is not null)">Check feeds only</button>
+                    <button @onclick="() => _editing = !_editing">@(_editing ? "Close settings" : "Settings")</button>
+                </div>
+                @if (_activity is not null)
+                {
+                    <div class="toast"><span class="spinner"></span> @_activity</div>
+                }
+                else if (_message is not null)
+                {
+                    <div class="toast">@_message</div>
+                }
+            </div>
+        </div>
+    </section>
+
+    @if (_editing)
+    {
+        <section class="card">
+            <h2>Playlist settings</h2>
+            <PlaylistSettingsForm Model="_settings" OnValidSubmit="SaveAsync" Busy="_busy">
+                @if (_confirmDelete)
+                {
+                    <button type="button" class="danger" @onclick="DeleteAsync">Really delete?</button>
+                    <button type="button" @onclick="() => _confirmDelete = false">Cancel</button>
+                }
+                else
+                {
+                    <button type="button" class="danger" @onclick="() => _confirmDelete = true">Delete playlist</button>
+                }
+            </PlaylistSettingsForm>
+            <p class="muted">Deleting removes the playlist, its podcasts and history here. The Yoto playlist is left untouched.</p>
+        </section>
+
+        <section class="card">
+            <h2>Yoto playlist</h2>
+            @if (_changingCard)
+            {
+                <PlaylistPicker @bind-SelectedCardId="_pickCardId" @bind-KeepAsFavourites="_pickKeep" CurrentPlaylistId="Id" />
+                <div class="row" style="margin-top:.75rem">
+                    <button class="primary" disabled="@(_busy || _pickCardId == _playlist.YotoCardId)" @onclick="ApplyCardAsync">
+                        @(_pickCardId is null ? "Create a new playlist on next sync" : "Use this playlist")
+                    </button>
+                    <button @onclick="() => _changingCard = false">Cancel</button>
+                </div>
+            }
+            else
+            {
+                <p class="row">
+                    @if (_playlist.YotoCardId is null)
+                    {
+                        <span>None yet. A new playlist is created on the next sync.</span>
+                    }
+                    else
+                    {
+                        <span>Syncing to <CardLink CardId="@_playlist.YotoCardId" Title="@_playlist.Name" /></span>
+                    }
+                    <button type="button" @onclick="StartChangeCard">Change playlist…</button>
+                </p>
+            }
+        </section>
+    }
+
+    <section class="card">
+        <div class="row card-head">
+            <h2>Podcasts</h2>
+            <a class="button" href="/playlists/@Id/podcasts/new">Add podcast</a>
+        </div>
+        @if (_playlist.Subscriptions.Count == 0)
+        {
+            <p class="muted">No podcasts yet. Add one to start filling the playlist.</p>
+        }
+        else
+        {
+            @if (_playlist.Subscriptions.Count > 1)
+            {
+                <p class="muted">Order is the podcasts' preference order, and the group order when tracks are grouped by podcast.</p>
+            }
+            <div class="subs">
+                @foreach (var (s, index) in _playlist.Subscriptions.Select((s, i) => (s, i)))
+                {
+                    <div class="sub @(s.Enabled ? "" : "off")" @key="s.Id">
+                        @if (_playlist.Subscriptions.Count > 1)
+                        {
+                            <div class="order">
+                                <button title="Move up" disabled="@(_busy || index == 0)" @onclick="() => MoveAsync(s.Id, -1)">▲</button>
+                                <button title="Move down" disabled="@(_busy || index == _playlist.Subscriptions.Count - 1)" @onclick="() => MoveAsync(s.Id, 1)">▼</button>
+                            </div>
+                        }
+                        @if (s.CoverSourceUrl is not null) { <img src="@s.CoverSourceUrl" alt="" /> }
+                        <div class="grow">
+                            <div><a class="stretch" href="/playlists/@Id/podcasts/@s.Id"><strong>@s.Name</strong></a></div>
+                            <div class="muted">
+                                @_plannedPer.GetValueOrDefault(s.Id) on playlist · @s.Episodes.Count episodes · @s.Episodes.Count(e => e.IsFavourite) favourites
+                                · newest @s.RecentCount, max @s.MaxTracks · checked @Format.Ago(s.LastPolledAt, Time.GetUtcNow())
+                            </div>
+                        </div>
+                        @if (s.LogoIconMediaId is not null && s.LogoIcon != LogoIconMode.Off && s.LogoIconUrl is not null)
+                        {
+                            <div class="sub-icons"><img class="icon16 x2" src="@s.LogoIconUrl" title="Logo icon (@(s.LogoIcon == LogoIconMode.Always ? "every episode" : "fallback"))" alt="" /></div>
+                        }
+                        @if (!s.Enabled) { <span class="badge none">Not included</span> }
+                        else if (s.LastError is not null) { <span class="badge err" title="@s.LastError">Feed error</span> }
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="card">
+        <div class="row card-head">
+            <h2>Planned tracks</h2>
+            <input class="text filter" placeholder="Filter…" @bind="_filter" @bind:event="oninput" />
+        </div>
+        <p class="muted">
+            What the next sync publishes, in order.
+            @foreach (var w in _plan!.Warnings) { <span class="err-text"> @w</span> }
+            @if (_iconIndex is null && Icons.LastError is not null) { <span class="err-text"> @Icons.LastError</span> }
+        </p>
+        <div class="table-wrap">
+        <table class="eps">
+            <thead>
+                <tr><th></th><th title="Position on playlist">#</th><th title="Icon on the player">Icon</th>@if (_multi) {<th>Podcast</th>}<th class="wide-only">Published</th><th>Title</th><th class="wide-only">Length</th><th class="wide-only" title="Uploaded to Yoto">Up</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var (e, pos) in _plan.Episodes.Select((e, i) => (e, i + 1)).Where(x => string.IsNullOrWhiteSpace(_filter) || x.e.Title.Contains(_filter, StringComparison.OrdinalIgnoreCase)))
+                {
+                    var podcast = _podcasts[e.SubscriptionId];
+                    var icon = EpisodeIcons.Describe(e, podcast, _iconIndex, EpisodeIcons.Match(e, podcast, _iconIndex));
+                    <tr class="planned @(e.MissingFromFeedSince is null ? "" : "missing")" @key="e.Id">
+                        <td>
+                            <button class="star @(e.IsFavourite ? "on" : "")" title="@(e.IsFavourite ? "Unpin" : "Pin as favourite")"
+                                    @onclick="() => ToggleFavouriteAsync(e)">@(e.IsFavourite ? "★" : "☆")</button>
+                        </td>
+                        <td class="num">@pos</td>
+                        <td>
+                            @if (icon.Url is { } url) { <img class="icon16" src="@url" alt="@icon.Title" title="@icon.Tip" /> }
+                        </td>
+                        @if (_multi)
+                        {
+                            <td class="pod"><a href="/playlists/@Id/podcasts/@podcast.Id">@podcast.Name</a></td>
+                        }
+                        <td class="num wide-only">@Format.Date(e.PublishedAt)</td>
+                        <td class="title">
+                            @e.Title
+                            @if (e.EpisodeType is "bonus" or "trailer") { <span class="badge after none">@e.EpisodeType</span> }
+                            @if (e.MissingFromFeedSince is not null) { <span class="badge after warn" title="Since @Format.Local(e.MissingFromFeedSince)">not in feed</span> }
+                            <div class="narrow-only muted meta">@Format.Date(e.PublishedAt) · @Format.Duration(e.DurationSeconds)@(e.AudioId is null ? "" : " · ✓ uploaded")</div>
+                        </td>
+                        <td class="num wide-only">@Format.Duration(e.DurationSeconds)</td>
+                        <td class="wide-only">@(e.AudioId is null ? "" : "✓")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2>Sync history</h2>
+        @if (_runs.Count == 0)
+        {
+            <p class="muted">No syncs yet.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+            <table class="eps history">
+                <thead><tr><th>Started</th><th class="wide-only">Trigger</th><th>Result</th><th class="wide-only">New</th><th class="wide-only">Uploaded</th><th>Details</th></tr></thead>
+                <tbody>
+                    @foreach (SyncRun run in _runs)
+                    {
+                        <tr>
+                            <td class="num">@Format.Local(run.StartedAt)</td>
+                            <td class="wide-only">@Format.Words(run.Trigger)</td>
+                            <td><span class="badge @BadgeClass(run.Result)">@Format.Result(run.Result)</span></td>
+                            <td class="num wide-only">@run.NewEpisodes</td>
+                            <td class="num wide-only">@run.Uploaded</td>
+                            <td>@run.Message</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Playlist? _playlist;
+    private PlannedPlaylist? _plan;
+    private Dictionary<int, Subscription> _podcasts = new();
+    private Dictionary<int, int> _plannedPer = new();
+    private IconIndex? _iconIndex;
+    private NextSync? _next;
+    private IReadOnlyList<SyncRun> _runs = [];
+    private PlaylistSettings _settings = new();
+    private bool _notFound, _busy, _editing, _confirmDelete, _changingCard, _pickKeep, _multi;
+    private string? _pickCardId;
+    private string _filter = "";
+    private string? _message, _activity;
+
+    private string PodcastCountText => _playlist!.Subscriptions.Count switch
+    {
+        0 => "No podcasts",
+        1 => _playlist.Subscriptions[0].Name,
+        var n => $"{n} podcasts",
+    };
+
+    protected override void OnInitialized() => Activity.Changed += OnActivityChanged;
+
+    public void Dispose() => Activity.Changed -= OnActivityChanged;
+
+    protected override Task OnParametersSetAsync()
+    {
+        _message = Notices.Take(Id) ?? _message;
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _playlist = await Playlists.GetAsync(Id);
+        _notFound = _playlist is null;
+        _activity = Activity.Get(Id);
+        if (_playlist is null) return;
+
+        _settings = PlaylistSettings.From(_playlist);
+        _podcasts = _playlist.Subscriptions.ToDictionary(s => s.Id);
+        Replan();
+
+        try
+        {
+            _iconIndex = _playlist.Subscriptions.Any(s => !s.UseDefaultIcon) ? await Icons.GetAsync() : null;
+        }
+        catch (PodcastToYoto.Yoto.YotoAuthException)
+        {
+            // Not connected / needs re-login: the dashboard says so; just show no icons here.
+            _iconIndex = null;
+        }
+        _runs = await Playlists.GetRecentRunsAsync(Id);
+        _next = await Scheduler.GetNextSyncAsync(Id);
+    }
+
+    private void Replan()
+    {
+        _plan = PlaylistPlanner.Plan(_playlist!, _playlist!.Subscriptions);
+        _plannedPer = _plan.Episodes.GroupBy(e => e.SubscriptionId).ToDictionary(g => g.Key, g => g.Count());
+        _multi = _plannedPer.Count > 1 || _playlist.Subscriptions.Count(s => s.Enabled) > 1;
+    }
+
+    private void OnActivityChanged(int playlistId)
+    {
+        if (playlistId != Id) return;
+        _ = InvokeAsync(async () =>
+        {
+            var was = _activity;
+            _activity = Activity.Get(Id);
+            if (_activity is null && was is not null) await LoadAsync(); // sync finished: refresh everything
+            StateHasChanged();
+        });
+    }
+
+    private static string OrderText(TrackOrder o) => o switch
+    {
+        TrackOrder.OldestFirst => "oldest first",
+        TrackOrder.GroupedByPodcast => "grouped by podcast",
+        _ => "newest first",
+    };
+
+    private void SyncNow()
+    {
+        _message = Scheduler.RequestSync(Id) ? null : "A sync is already queued or running.";
+        _activity = Activity.Get(Id);
+    }
+
+    private async Task DryRunAsync()
+    {
+        var outcome = await Engine.SyncAsync(Id, SyncTrigger.Manual, dryRun: true);
+        _message = outcome.Message;
+        await LoadAsync();
+    }
+
+    private async Task PollAsync()
+    {
+        _busy = true;
+        try
+        {
+            var lines = new List<string>();
+            foreach (var s in _playlist!.Subscriptions.Where(s => s.Enabled))
+            {
+                var outcome = await Subscriptions.PollAsync(s.Id);
+                lines.Add(_playlist.Subscriptions.Count > 1 ? $"{s.Name}: {outcome.Describe()}" : outcome.Describe());
+            }
+            _message = lines.Count == 0 ? "No podcasts are included." : string.Join(" ", lines);
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Playlists.UpdateSettingsAsync(Id, _settings);
+            _message = "Settings saved. They apply on the next sync.";
+            _editing = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = $"Save failed: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task MoveAsync(int podcastId, int delta)
+    {
+        _busy = true;
+        try
+        {
+            await Subscriptions.MoveAsync(podcastId, delta);
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void StartChangeCard()
+    {
+        _pickCardId = _playlist!.YotoCardId;
+        _pickKeep = false;
+        _changingCard = true;
+    }
+
+    private async Task ApplyCardAsync()
+    {
+        if (_pickCardId is null)
+        {
+            await Playlists.ClearCardAsync(Id);
+            _message = "Yoto playlist detached. The next sync creates a new one.";
+            _changingCard = false;
+            await LoadAsync();
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var result = await Adopter.AttachAsync(Id, _pickCardId, _pickKeep);
+            _message = result.Describe();
+            _changingCard = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = $"Couldn't attach playlist: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        await Playlists.DeleteAsync(Id);
+        Nav.NavigateTo("/");
+    }
+
+    private async Task ToggleFavouriteAsync(Episode e)
+    {
+        var value = !e.IsFavourite;
+        e.IsFavourite = value; // optimistic
+        Replan();
+        try
+        {
+            await Subscriptions.SetFavouriteAsync(e.Id, value);
+        }
+        catch (Exception ex)
+        {
+            e.IsFavourite = !value;
+            Replan();
+            _message = $"Couldn't update favourite: {ex.Message}";
+        }
+    }
+
+    private static string BadgeClass(SyncResult r) => r switch
+    {
+        SyncResult.Updated or SyncResult.NoChange => "ok",
+        SyncResult.Failed => "err",
+        SyncResult.Running => "warn",
+        _ => "none",
+    };
+}

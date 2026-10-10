@@ -16,13 +16,13 @@ public sealed record AdoptResult(bool KeptAsFavourites, int Tracks, int Matched,
                   (Unmatched.Count == 0 ? "" : $" Not matched (will be removed on next sync): {string.Join(", ", Unmatched)}.")
                 : $"Playlist attached. Its {Tracks} existing tracks will be replaced by the planned episodes; " +
                   $"{ReusedAudio} matched episodes reuse audio already on Yoto (no re-upload).";
-        return head + " Automatic syncing is paused for this subscription: check the plan with Dry run, then Sync now, then re-enable it in Settings.";
+        return head + " Automatic syncing is paused for this playlist: check the plan with Dry run, then Sync now, then re-enable it in Settings.";
     }
 }
 
 /// <summary>
-/// Points a subscription at an existing Yoto playlist. Its current tracks are matched to feed episodes so their audio is
-/// reused (no re-upload); optionally the matches also become favourites so they stay on the card.
+/// Points a playlist at an existing Yoto playlist. Its current tracks are matched to the episodes of all the playlist's
+/// podcasts so their audio is reused (no re-upload); optionally the matches also become favourites so they stay on the card.
 /// </summary>
 public sealed class PlaylistAdopter(
     IDbContextFactory<AppDbContext> dbFactory,
@@ -30,10 +30,13 @@ public sealed class PlaylistAdopter(
     TimeProvider time,
     ILogger<PlaylistAdopter> logger)
 {
-    public async Task<AdoptResult> AttachAsync(int subscriptionId, string cardId, bool keepAsFavourites, CancellationToken ct = default)
+    public async Task<AdoptResult> AttachAsync(int playlistId, string cardId, bool keepAsFavourites, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var s = await db.Subscriptions.Include(x => x.Episodes).ThenInclude(e => e.Audio).SingleAsync(x => x.Id == subscriptionId, ct);
+        var s = await db.Playlists
+            .Include(x => x.Subscriptions).ThenInclude(x => x.Episodes).ThenInclude(e => e.Audio)
+            .AsSplitQuery()
+            .SingleAsync(x => x.Id == playlistId, ct);
 
         using var doc = await yoto.GetContentAsync(cardId, ct);
         var card = doc.RootElement.TryGetProperty("card", out var c) ? c : doc.RootElement;
@@ -45,21 +48,20 @@ public sealed class PlaylistAdopter(
         // reviewed the plan. They re-enable automatic syncing in Settings.
         s.Enabled = false;
 
-        // Keep the playlist's current name unless the user already chose one.
+        // Keep the Yoto playlist's current name.
         var existingTitle = Str(card, "title");
-        if (s.TitleOverride is null && !string.IsNullOrWhiteSpace(existingTitle) && existingTitle != s.Name)
-            s.TitleOverride = existingTitle;
+        if (!string.IsNullOrWhiteSpace(existingTitle)) s.Name = existingTitle;
 
         var result = await AdoptTracksAsync(db, s, card, keepAsFavourites, ct);
 
         await db.SaveChangesAsync(ct);
-        logger.LogInformation("Subscription {Id} attached to playlist {CardId}: {Result}", subscriptionId, cardId, result.Describe());
+        logger.LogInformation("Playlist {Id} attached to Yoto playlist {CardId}: {Result}", playlistId, cardId, result.Describe());
         return result;
     }
 
-    private async Task<AdoptResult> AdoptTracksAsync(AppDbContext db, Subscription s, JsonElement card, bool keepAsFavourites, CancellationToken ct)
+    private async Task<AdoptResult> AdoptTracksAsync(AppDbContext db, Playlist s, JsonElement card, bool keepAsFavourites, CancellationToken ct)
     {
-        var candidates = s.Episodes
+        var candidates = s.Subscriptions.SelectMany(x => x.Episodes)
             .OrderByDescending(e => e.PublishedAt ?? DateTimeOffset.MinValue)
             .Select(e => (TrackMatcher.Normalize(e.Title), e))
             .ToList();

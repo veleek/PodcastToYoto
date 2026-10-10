@@ -16,7 +16,7 @@ namespace PodcastToYoto.Web.Sync;
 public sealed record SyncOutcome(SyncResult Result, string Message, PlannedPlaylist? Plan = null);
 
 /// <summary>
-/// One sync of one subscription: poll → plan → ensure audio → ensure cover → publish (skipped if unchanged).
+/// One sync of one playlist: poll each podcast → plan → ensure audio → ensure cover → publish (skipped if unchanged).
 /// Only one sync runs at a time across the app.
 /// </summary>
 public sealed class SyncEngine(
@@ -40,34 +40,34 @@ public sealed class SyncEngine(
 
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    public async Task<SyncOutcome> SyncAsync(int subscriptionId, SyncTrigger trigger, bool dryRun = false, CancellationToken ct = default)
+    public async Task<SyncOutcome> SyncAsync(int playlistId, SyncTrigger trigger, bool dryRun = false, CancellationToken ct = default)
     {
         dryRun |= options.CurrentValue.DryRun;
-        activity.Set(subscriptionId, "Waiting for another sync…");
+        activity.Set(playlistId, "Waiting for another sync…");
         try
         {
             await _gate.WaitAsync(ct);
         }
         catch
         {
-            activity.Clear(subscriptionId);
+            activity.Clear(playlistId);
             throw;
         }
 
         try
         {
-            return await RunAsync(subscriptionId, trigger, dryRun, ct);
+            return await RunAsync(playlistId, trigger, dryRun, ct);
         }
         finally
         {
             _gate.Release();
-            activity.Clear(subscriptionId);
+            activity.Clear(playlistId);
         }
     }
 
     private async Task<SyncOutcome> RunAsync(int id, SyncTrigger trigger, bool dryRun, CancellationToken ct)
     {
-        var run = new SyncRun { SubscriptionId = id, Trigger = trigger, StartedAt = time.GetUtcNow() };
+        var run = new SyncRun { PlaylistId = id, Trigger = trigger, StartedAt = time.GetUtcNow() };
         await using (var db = await dbFactory.CreateDbContextAsync(ct))
         {
             db.SyncRuns.Add(run);
@@ -85,13 +85,13 @@ public sealed class SyncEngine(
         }
         catch (YotoAuthException ex)
         {
-            logger.LogWarning(ex, "Sync of subscription {Id} failed: Yoto auth", id);
+            logger.LogWarning(ex, "Sync of playlist {Id} failed: Yoto auth", id);
             outcome = new SyncOutcome(SyncResult.Failed, $"Yoto login problem: {ex.Message}");
             await notify.NotifyAsync(new Notification(NotificationKind.YotoNeedsLogin, "Yoto needs re-login", ex.Message, id), CancellationToken.None);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Sync of subscription {Id} failed", id);
+            logger.LogError(ex, "Sync of playlist {Id} failed", id);
             var msg = ex is YotoApiException api ? $"Yoto API {api.StatusCode}: {api.Message}" : ex.Message;
             outcome = new SyncOutcome(SyncResult.Failed, msg);
             await notify.NotifyAsync(new Notification(NotificationKind.SyncFailed, "Sync failed", msg, id), CancellationToken.None);
@@ -107,7 +107,7 @@ public sealed class SyncEngine(
             r.NewEpisodes = run.NewEpisodes;
             r.Uploaded = run.Uploaded;
 
-            var s = await db.Subscriptions.SingleOrDefaultAsync(x => x.Id == id);
+            var s = await db.Playlists.SingleOrDefaultAsync(x => x.Id == id);
             if (s is not null && outcome.Result != SyncResult.DryRun)
             {
                 s.LastSyncResult = outcome.Result;
@@ -125,10 +125,10 @@ public sealed class SyncEngine(
             await db.SaveChangesAsync();
 
             // Prune history.
-            var cutoff = await db.SyncRuns.Where(x => x.SubscriptionId == id)
+            var cutoff = await db.SyncRuns.Where(x => x.PlaylistId == id)
                 .OrderByDescending(x => x.StartedAt).Skip(MaxRunsKept).Select(x => (int?)x.Id).FirstOrDefaultAsync();
             if (cutoff is not null)
-                await db.SyncRuns.Where(x => x.SubscriptionId == id && x.Id <= cutoff).ExecuteDeleteAsync();
+                await db.SyncRuns.Where(x => x.PlaylistId == id && x.Id <= cutoff).ExecuteDeleteAsync();
         }
 
         return outcome;
@@ -136,30 +136,46 @@ public sealed class SyncEngine(
 
     private async Task<SyncOutcome> SyncCoreAsync(int id, SyncRun run, bool dryRun, CancellationToken ct)
     {
-        // 1. Poll
-        activity.Set(id, "Checking feed…");
-        var poll = await subscriptions.PollAsync(id, ct);
-        if (!poll.Ok) throw new InvalidOperationException(poll.Describe());
-        run.NewEpisodes = poll.Merge.Added;
+        var notes = new List<string>();
+
+        // 1. Poll every included podcast. One broken feed doesn't hold up the others: its stored episodes are used.
+        var podcastIds = await GetIncludedPodcastsAsync(id, ct);
+        var failedPolls = 0;
+        foreach (var (podcastId, name) in podcastIds)
+        {
+            activity.Set(id, podcastIds.Count > 1 ? $"Checking feed: {name}…" : "Checking feed…");
+            var poll = await subscriptions.PollAsync(podcastId, ct);
+            if (!poll.Ok)
+            {
+                failedPolls++;
+                notes.Add(podcastIds.Count > 1 ? $"{name}: {poll.Describe()}" : poll.Describe());
+            }
+            run.NewEpisodes += poll.Merge.Added;
+        }
+        if (podcastIds.Count > 0 && failedPolls == podcastIds.Count) throw new InvalidOperationException(string.Join(" ", notes));
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var s = await db.Subscriptions.Include(x => x.Episodes).SingleAsync(x => x.Id == id, ct);
+        var p = await db.Playlists
+            .Include(x => x.Subscriptions).ThenInclude(s => s.Episodes)
+            .AsSplitQuery()
+            .SingleAsync(x => x.Id == id, ct);
 
         // 2. Plan
-        var plan = PlaylistPlanner.Plan(s, s.Episodes);
-        foreach (var w in plan.Warnings) logger.LogWarning("Subscription {Id}: {Warning}", id, w);
+        var plan = PlaylistPlanner.Plan(p, p.Subscriptions);
+        foreach (var w in plan.Warnings) logger.LogWarning("Playlist {Id}: {Warning}", id, w);
 
         if (dryRun)
         {
             var missing = plan.Episodes.Count(e => e.AudioId is null);
             return new SyncOutcome(SyncResult.DryRun,
-                $"Dry run: {plan.Episodes.Count} episodes planned, {missing} would be uploaded. {string.Join(" ", plan.Warnings)}".Trim(), plan);
+                $"Dry run: {plan.Episodes.Count} episodes planned, {missing} would be uploaded. {string.Join(" ", plan.Warnings.Concat(notes))}".Trim(), plan);
         }
 
         // 3. Audio
-        var icons = s.UseDefaultIcon ? null : await iconCatalog.GetAsync(ct);
-        var notes = new List<string>();
-        if (!s.UseDefaultIcon && icons is null && iconCatalog.LastError is not null) notes.Add(iconCatalog.LastError);
+        var podcasts = p.Subscriptions.ToDictionary(s => s.Id);
+        var wantsIcons = plan.Episodes.Any(e => !podcasts[e.SubscriptionId].UseDefaultIcon);
+        var icons = wantsIcons ? await iconCatalog.GetAsync(ct) : null;
+        if (wantsIcons && icons is null && iconCatalog.LastError is not null) notes.Add(iconCatalog.LastError);
 
         var entries = new List<PlaylistEntry>();
         var skipped = new List<string>();
@@ -173,11 +189,7 @@ public sealed class SyncEngine(
             {
                 var a = await audio.EnsureAsync(db, e, ct);
                 if (needsUpload) run.Uploaded++;
-                // A hand-picked icon always wins; otherwise emoji matching (unless turned off for this subscription).
-                var iconRef = e.IconMediaId is { } chosen ? $"yoto:#{chosen}"
-                    : icons is null ? null
-                    : IconMatcher.Match(e.Title, icons)?.Icon.Ref;
-                entries.Add(new PlaylistEntry(e.Title, AudioPipeline.ToTranscoded(a), iconRef));
+                entries.Add(new PlaylistEntry(e.Title, AudioPipeline.ToTranscoded(a), IconFor(e, podcasts[e.SubscriptionId], icons)));
             }
             catch (Exception ex) when (ex is HttpRequestException or YotoApiException or TimeoutException
                                        || (ex is TaskCanceledException && !ct.IsCancellationRequested))
@@ -192,42 +204,69 @@ public sealed class SyncEngine(
             throw new InvalidOperationException("No episodes could be prepared; nothing to publish.");
 
         // 4. Cover
-        if (s.CoverSourceUrl is not null && s.CoverMediaUrl is null)
+        if (p.DesiredCoverUrl is { } coverUrl && (p.CoverMediaUrl is null || p.CoverSourceUrl != coverUrl))
         {
             activity.Set(id, "Uploading cover…");
             try
             {
-                s.CoverMediaUrl = await yoto.UploadCoverImageFromUrlAsync(s.CoverSourceUrl, ct: ct);
+                p.CoverMediaUrl = await yoto.UploadCoverImageFromUrlAsync(coverUrl, ct: ct);
+                p.CoverSourceUrl = coverUrl;
                 await db.SaveChangesAsync(ct);
             }
             catch (YotoApiException ex)
             {
-                logger.LogWarning(ex, "Cover upload failed for subscription {Id}; continuing without", id);
+                logger.LogWarning(ex, "Cover upload failed for playlist {Id}; continuing without", id);
             }
         }
 
         // 5. Publish
-        var title = s.TitleOverride ?? s.Name;
-        var request = PlaylistBuilder.Build(title, entries, s.YotoCardId, s.CoverMediaUrl);
+        var request = PlaylistBuilder.Build(p.Name, entries, p.YotoCardId, p.CoverMediaUrl);
         var hash = Hash(request);
 
-        if (s.YotoCardId is not null && hash == s.LastPublishedHash)
+        if (p.YotoCardId is not null && hash == p.LastPublishedHash)
             return new SyncOutcome(SyncResult.NoChange, Summary("No changes.", entries.Count, run, skipped, plan, notes), plan);
 
-        activity.Set(id, s.YotoCardId is null ? "Creating Yoto playlist…" : "Updating Yoto playlist…");
-        if (s.YotoCardId is not null)
-            await MergeExistingSettingsAsync(s.YotoCardId, request, ct);
+        activity.Set(id, p.YotoCardId is null ? "Creating Yoto playlist…" : "Updating Yoto playlist…");
+        if (p.YotoCardId is not null)
+            await MergeExistingSettingsAsync(p.YotoCardId, request, ct);
 
         var card = await yoto.CreateOrUpdateContentAsync(request, ct);
-        var created = s.YotoCardId is null;
-        s.YotoCardId = card.GetProperty("cardId").GetString();
-        s.LastPublishedHash = hash;
+        var created = p.YotoCardId is null;
+        p.YotoCardId = card.GetProperty("cardId").GetString();
+        p.LastPublishedHash = hash;
         await db.SaveChangesAsync(ct);
 
-        var message = Summary(created ? $"Created playlist {s.YotoCardId}." : "Playlist updated.", entries.Count, run, skipped, plan, notes);
-        logger.LogInformation("Subscription {Id} '{Name}': {Message}", id, s.Name, message);
-        await notify.NotifyAsync(new Notification(NotificationKind.PlaylistUpdated, s.Name, message, id), CancellationToken.None);
+        var message = Summary(created ? $"Created playlist {p.YotoCardId}." : "Playlist updated.", entries.Count, run, skipped, plan, notes);
+        logger.LogInformation("Playlist {Id} '{Name}': {Message}", id, p.Name, message);
+        await notify.NotifyAsync(new Notification(NotificationKind.PlaylistUpdated, p.Name, message, id), CancellationToken.None);
         return new SyncOutcome(SyncResult.Updated, message, plan);
+    }
+
+    private async Task<List<(int Id, string Name)>> GetIncludedPodcastsAsync(int playlistId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return (await db.Subscriptions.AsNoTracking()
+                .Where(s => s.PlaylistId == playlistId && s.Enabled)
+                .OrderBy(s => s.Position).ThenBy(s => s.Id)
+                .Select(s => new { s.Id, s.Name })
+                .ToListAsync(ct))
+            .Select(x => (x.Id, x.Name))
+            .ToList();
+    }
+
+    /// <summary>
+    /// The icon for an episode: hand-picked always wins; then the podcast's logo icon if it's set to "always"; then emoji
+    /// matching (unless turned off for the podcast); then the logo icon if it's the fallback; else the player's default.
+    /// </summary>
+    public static string? IconFor(Episode e, Subscription podcast, IconIndex? icons)
+    {
+        if (e.IconMediaId is { } chosen) return $"yoto:#{chosen}";
+
+        var logo = podcast.LogoIconMediaId is { } m && podcast.LogoIcon != LogoIconMode.Off ? $"yoto:#{m}" : null;
+        if (logo is not null && podcast.LogoIcon == LogoIconMode.Always) return logo;
+
+        var matched = podcast.UseDefaultIcon || icons is null ? null : IconMatcher.Match(e.Title, icons)?.Icon.Ref;
+        return matched ?? logo;
     }
 
     /// <summary>Keep Yoto-side settings (resume timeout, playback type, cover if we have none) when updating.</summary>

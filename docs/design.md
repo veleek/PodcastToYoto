@@ -30,6 +30,8 @@ Split `Web` into `Web` + `Sync` later only if it gets unwieldy.
 
 ## Data model
 
+> Since M8 the target card, title, cover, schedule, sync state and `SyncRun`s belong to a `Playlist` that owns one or more ordered `Subscription`s (one per podcast). See M8 under Milestones.
+
 ```mermaid
 erDiagram
     YotoAccount {
@@ -200,9 +202,10 @@ Dev: `launchSettings.json` binds `http://0.0.0.0:5164`. Container: listens on 80
 
 7. **M7 Ops** ✅ *(2026-10-06)*: nightly in-app backup (`BackupService`: SQLite online backup + Data Protection keys + JSON export → zip, keep 14, Settings card with download / back up now); `build.ps1 -Deploy` ships the image to the server (docker save → scp → docker load, or a registry with `-Registry`) and restarts it with compose over ssh.
 
+8. **M8 Multi-podcast playlists** ✅ *(2026-10-08)*: `Playlist` is the top-level entity (Yoto playlist, title, cover, schedule, sync state, history, max total tracks, order: newest / oldest first or grouped by podcast) and owns ordered `Subscription`s (one per podcast, with its own recent count, max episodes, order, trailers, icon settings, and an "included" flag). The planner picks per podcast, then merges, caps and orders; the sync polls each included podcast (one broken feed doesn't block the rest) and publishes as before. Migration `MultiPodcastPlaylists` turns each subscription into a one-podcast playlist with the same id, card, title, cover and history, so nothing republishes. Podcast logo icons: 16×16 crops of the artwork generated with SkiaSharp, uploaded via `POST /media/displayIcons/user/me/upload`, used as a fallback or on every episode. Export format v2 (v1 still imports). UI: dashboard lists playlists; `/playlists/{id}` (podcasts, planned tracks, history); `/playlists/{id}/podcasts/{id}` (podcast settings, logo icon, episodes); old `/subscriptions/{id}` links redirect.
+
 ## Later / ideas
 
-- Playlists combining several feeds (e.g. "Owen's Podcasts").
 - Integration tests for the sync engine against a fake Yoto API.
 - Uptime monitoring of `/health` from Home Assistant.
 

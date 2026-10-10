@@ -67,6 +67,7 @@ builder.Services.AddKeyedSingleton("feeds", (_, _) => new HttpClient(new Sockets
 });
 builder.Services.AddSingleton(sp => new FeedFetcher(sp.GetRequiredKeyedService<HttpClient>("feeds")));
 builder.Services.AddSingleton<SubscriptionService>();
+builder.Services.AddSingleton<PlaylistService>();
 builder.Services.AddSingleton<SubscriptionNotices>();
 builder.Services.AddSingleton<PlaylistAdopter>();
 builder.Services.AddSingleton<SubscriptionTransfer>();
@@ -97,6 +98,8 @@ builder.Services.AddKeyedSingleton("downloads", (_, _) => new HttpClient(Episode
 builder.Services.AddSingleton(sp => new EpisodeDownloader(sp.GetRequiredKeyedService<HttpClient>("downloads"), tempDir));
 builder.Services.AddSingleton<AudioPipeline>();
 builder.Services.AddSingleton<IconCatalog>();
+builder.Services.AddHttpClient(LogoIconGenerator.HttpClientName, c => c.Timeout = TimeSpan.FromMinutes(1));
+builder.Services.AddSingleton<LogoIconGenerator>();
 builder.Services.AddSingleton<SyncActivity>();
 builder.Services.AddOptions<HomeAssistantOptions>().BindConfiguration(HomeAssistantOptions.Section);
 builder.Services.AddHttpClient(HomeAssistantChannel.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(15));

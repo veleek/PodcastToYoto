@@ -1,5 +1,4 @@
-@inject Microsoft.Extensions.Options.IOptionsMonitor<PodcastToYoto.Web.Options.SyncOptions> SyncOptions
-
+@* Settings of one podcast within a playlist. *@
 <EditForm Model="Model" OnValidSubmit="OnValidSubmit" class="form">
     <DataAnnotationsValidator />
 
@@ -13,10 +12,6 @@
         <ValidationMessage For="() => Model.FeedUrl" />
     </label>
 
-    <label>Playlist title <span class="muted">(blank = podcast title)</span>
-        <InputText @bind-Value="Model.TitleOverride" />
-    </label>
-
     @* Each label is caption / control / message; the grid lines these up across columns (CSS subgrid)
        so a validation message under one field doesn't push its neighbours out of line. *@
     <div class="grid2">
@@ -27,13 +22,13 @@
         </label>
 
         <label>
-            <span class="cap">Max tracks on card</span>
+            <span class="cap">Max episodes from this podcast <span class="muted">(recent + favourites)</span></span>
             <InputNumber @bind-Value="Model.MaxTracks" min="1" max="100" ParsingErrorMessage="Enter a whole number." />
             <ValidationMessage For="() => Model.MaxTracks" />
         </label>
 
         <label>
-            <span class="cap">Order</span>
+            <span class="cap">Order <span class="muted">(when the playlist groups by podcast)</span></span>
             <InputSelect @bind-Value="Model.Order">
                 <option value="@PlaylistOrder.NewestFirst">Newest first</option>
                 <option value="@PlaylistOrder.OldestFirst">Oldest first</option>
@@ -41,22 +36,18 @@
         </label>
 
         <label>
-            <span class="cap">Sync interval (minutes) <span class="muted">(blank = default: every @Format.Interval(SyncOptions.CurrentValue.DefaultPollInterval))</span></span>
-            <InputNumber @bind-Value="Model.PollIntervalMinutes" min="5" placeholder="@((int)SyncOptions.CurrentValue.DefaultPollInterval.TotalMinutes)" ParsingErrorMessage="Enter a whole number of minutes, or leave blank." />
-            <ValidationMessage For="() => Model.PollIntervalMinutes" />
+            <span class="cap">Podcast logo icon @(HasLogoIcon ? "" : "(generate one below first)")</span>
+            <InputSelect @bind-Value="Model.LogoIcon" disabled="@(!HasLogoIcon)">
+                <option value="@LogoIconMode.Off">Don't use</option>
+                <option value="@LogoIconMode.Fallback">When no other icon matches</option>
+                <option value="@LogoIconMode.Always">On every episode</option>
+            </InputSelect>
         </label>
     </div>
 
     <label class="check"><InputCheckbox @bind-Value="Model.IncludeTrailers" /> Include trailers</label>
     <label class="check"><InputCheckbox @bind-Value="Model.MatchIcons" /> Episode icons: pick a Yoto icon from the emoji in each title</label>
-    @if (LockEnabled)
-    {
-        <label class="check muted"><input type="checkbox" disabled /> Enabled (polled and synced automatically) · paused until you've reviewed the first sync</label>
-    }
-    else
-    {
-        <label class="check"><InputCheckbox @bind-Value="Model.Enabled" /> Enabled (polled and synced automatically)</label>
-    }
+    <label class="check"><InputCheckbox @bind-Value="Model.Enabled" /> Included in the playlist</label>
 
     <div class="row">
         <button type="submit" class="primary" disabled="@Busy">@SubmitLabel</button>
@@ -71,7 +62,7 @@
     [Parameter] public bool Busy { get; set; }
     [Parameter] public bool LockFeedUrl { get; set; }
 
-    /// <summary>Show "Enabled" as off and read-only (e.g. when attaching an existing playlist, which pauses syncing).</summary>
-    [Parameter] public bool LockEnabled { get; set; }
+    /// <summary>A logo icon has been generated, so the logo icon setting can be used.</summary>
+    [Parameter] public bool HasLogoIcon { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
 }

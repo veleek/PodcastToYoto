@@ -1,7 +1,7 @@
 @using System.Text.Json
 @using PodcastToYoto.Yoto
 @inject YotoAccountService Account
-@inject SubscriptionService Subscriptions
+@inject PlaylistService Playlists
 
 @if (_error is not null)
 {
@@ -52,8 +52,8 @@ else
     [Parameter] public bool KeepAsFavourites { get; set; }
     [Parameter] public EventCallback<bool> KeepAsFavouritesChanged { get; set; }
 
-    /// <summary>Subscription being edited (its own playlist isn't flagged as "used by").</summary>
-    [Parameter] public int? CurrentSubscriptionId { get; set; }
+    /// <summary>Playlist being edited (its own Yoto playlist isn't flagged as "used by").</summary>
+    [Parameter] public int? CurrentPlaylistId { get; set; }
 
     private readonly string _group = $"pl-{Guid.NewGuid():N}";
     private IReadOnlyList<YotoCardSummary>? _playlists;
@@ -65,8 +65,8 @@ else
         try
         {
             _playlists = await Account.ListPlaylistsAsync();
-            _usage = (await Subscriptions.ListAsync())
-                .Where(s => s.YotoCardId is not null && s.Id != CurrentSubscriptionId)
+            _usage = (await Playlists.ListAsync())
+                .Where(s => s.YotoCardId is not null && s.Id != CurrentPlaylistId)
                 .GroupBy(s => s.YotoCardId!)
                 .ToDictionary(g => g.Key, g => string.Join(", ", g.Select(s => s.Name)));
         }

@@ -1,6 +1,6 @@
 @page "/"
 @inject YotoAccountService Account
-@inject SubscriptionService Subscriptions
+@inject PlaylistService Playlists
 @inject TimeProvider Time
 @inject SyncScheduler Scheduler
 @inject NavigationManager Nav
@@ -102,32 +102,33 @@
 
 <section class="card">
     <div class="row card-head">
-        <h2>Subscriptions</h2>
-        <a class="button" href="/subscriptions/new">Add subscription</a>
+        <h2>Playlists</h2>
+        <a class="button" href="/playlists/new">New playlist</a>
     </div>
-    @if (_subs is null)
+    @if (_playlists is null)
     {
         <p class="muted">Loading…</p>
     }
-    else if (_subs.Count == 0)
+    else if (_playlists.Count == 0)
     {
-        <p class="muted">No subscriptions yet.</p>
+        <p class="muted">No playlists yet.</p>
     }
     else
     {
         <div class="subs">
-            @foreach (var s in _subs)
+            @foreach (var p in _playlists)
             {
                 <div class="sub">
-                    @if (s.CoverSourceUrl is not null) { <img src="@s.CoverSourceUrl" alt="" /> }
+                    @if (p.CoverUrl is not null) { <img src="@p.CoverUrl" alt="" /> }
                     <div class="grow">
-                        <div><a class="stretch" href="/subscriptions/@s.Id"><strong>@s.Name</strong></a></div>
-                        <div class="muted">@s.EpisodeCount episodes · @s.FavouriteCount favourites · synced @Format.Ago(s.LastSyncedAt, Time.GetUtcNow()) · next @NextText(s.Id)
-                            @if (s.YotoCardId is not null) { <span>· playlist </span><CardLink CardId="@s.YotoCardId" Title="@s.PlaylistTitle" /> }
+                        <div><a class="stretch" href="/playlists/@p.Id"><strong>@p.Name</strong></a></div>
+                        <div class="muted">@PodcastsText(p)</div>
+                        <div class="muted">@p.EpisodeCount episodes · @p.FavouriteCount favourites · synced @Format.Ago(p.LastSyncedAt, Time.GetUtcNow()) · next @NextText(p.Id)
+                            @if (p.YotoCardId is not null) { <span> · </span><CardLink CardId="@p.YotoCardId" Title="Yoto" /> }
                         </div>
                     </div>
-                    @if (!s.Enabled) { <span class="badge none">Disabled</span> }
-                    else if (s.LastError is not null) { <span class="badge err" title="@s.LastError">Error</span> }
+                    @if (!p.Enabled) { <span class="badge none">Disabled</span> }
+                    else if (p.AnyError is not null) { <span class="badge err" title="@p.AnyError">Error</span> }
                     else { <span class="badge ok">OK</span> }
                 </div>
             }
@@ -143,13 +144,13 @@
     private YotoConnectionTest? _test;
     private bool _busy;
     private bool _showAccountDetails;
-    private IReadOnlyList<SubscriptionSummary>? _subs;
+    private IReadOnlyList<PlaylistSummary>? _playlists;
 
     protected override async Task OnInitializedAsync()
     {
         _status = await Account.GetStatusAsync();
-        _subs = await Subscriptions.ListAsync();
-        foreach (var sub in _subs) _next[sub.Id] = await Scheduler.GetNextSyncAsync(sub.Id);
+        _playlists = await Playlists.ListAsync();
+        foreach (var p in _playlists) _next[p.Id] = await Scheduler.GetNextSyncAsync(p.Id);
     }
 
     private readonly Dictionary<int, NextSync> _next = new();
@@ -158,6 +159,13 @@
         !_next.TryGetValue(id, out var n) ? "—"
         : n.PausedReason is not null ? n.PausedReason.ToLowerInvariant()
         : Format.Until(n.At, Time.GetUtcNow());
+
+    private static string PodcastsText(PlaylistSummary p) => p.Podcasts.Count switch
+    {
+        0 => "No podcasts",
+        1 => p.Podcasts[0].Name,
+        _ => $"{p.Podcasts.Count} podcasts: {string.Join(", ", p.Podcasts.Select(x => x.Enabled ? x.Name : $"{x.Name} (off)"))}",
+    };
 
     // Full page load: /auth/login is a server endpoint, not a Blazor route.
     private void Connect() => Nav.NavigateTo("/auth/login", forceLoad: true);

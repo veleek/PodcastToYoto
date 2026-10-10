@@ -6,6 +6,7 @@ namespace PodcastToYoto.Web.Data;
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     public DbSet<YotoAccount> YotoAccounts => Set<YotoAccount>();
+    public DbSet<Playlist> Playlists => Set<Playlist>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
     public DbSet<Episode> Episodes => Set<Episode>();
     public DbSet<Audio> Audio => Set<Audio>();
@@ -19,6 +20,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         // Enums as readable strings.
         builder.Properties<AccountStatus>().HaveConversion<string>();
         builder.Properties<PlaylistOrder>().HaveConversion<string>();
+        builder.Properties<TrackOrder>().HaveConversion<string>();
+        builder.Properties<LogoIconMode>().HaveConversion<string>();
         builder.Properties<SyncTrigger>().HaveConversion<string>();
         builder.Properties<SyncResult>().HaveConversion<string>();
     }
@@ -30,8 +33,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Id).ValueGeneratedNever();
         });
 
+        b.Entity<Playlist>(e =>
+        {
+            e.HasMany(x => x.Subscriptions).WithOne(x => x.Playlist!).HasForeignKey(x => x.PlaylistId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         b.Entity<Subscription>(e =>
         {
+            e.HasIndex(x => new { x.PlaylistId, x.Position });
             e.HasMany(x => x.Episodes).WithOne(x => x.Subscription!).HasForeignKey(x => x.SubscriptionId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -49,8 +58,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
         b.Entity<SyncRun>(e =>
         {
-            e.HasIndex(x => new { x.SubscriptionId, x.StartedAt });
-            e.HasOne(x => x.Subscription).WithMany().HasForeignKey(x => x.SubscriptionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.PlaylistId, x.StartedAt });
+            e.HasOne(x => x.Playlist).WithMany().HasForeignKey(x => x.PlaylistId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
