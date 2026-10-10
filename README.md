@@ -1,18 +1,60 @@
-# PodcastToYotoPlaylist
+# 🎧 Podcast -> Yoto Playlist
 
-Keeps Yoto Make-Your-Own playlists in sync with podcast RSS feeds. Built first for *Silly Stories for Kids*.
+Keeps Yoto Make-Your-Own playlists in sync with podcast RSS feeds. Built first for _Silly Stories for Kids_.
 
-Status: **M1–M8 done; deployed at yoto.example.com**. See [docs/requirements.md](docs/requirements.md), [docs/design.md](docs/design.md), [docs/spikes.md](docs/spikes.md).
+My kids have a few podcasts that they love to listen to, but they were unable to use their Yoto players to listen to
+them so they often had to use the smart speakers in the house, or would need us to play them on the radio in the car. It
+was possible to manually download episodes and then construct a Yoto Make-Your-Own (MYO) playlist, but we had to keep
+coming back to it every time a new episode was released.
+
+This was my first attempt at vibe-coding something from scratch (I used Claude Code as you can see from the commit
+annotations). I've got a few decades of programming experience and strong opinions about the "right" way to do things,
+but I did my best to let it handle everything (though I did guide it to pick tech my preferred tech). It was able to
+essentially one-shot an implementation from the initial requirements which was impressive. After that I started adding
+features for my own QoL (UI improvements, multiple podcasts on a single playlist, etc.).
+
+The majority of the work that I did was creating and managing credentials, and guiding it through what my home-server
+config looked like to make it easy for me to deploy.
+
+All-in-all, very satisfied with the result. It makes my kids and wife happy, and saves us some time. I'm glad I was able
+to accomplish this and didn't need to spend much time hacking around with auth systems and figuring out auto-reconnect
+shenanigans, but it does feel a little empty inside. Hopefully someone else will find this useful as well and that'll
+make it up to me!
+
+Status: **M1–M8 done; deployed on my home server**. See [docs/requirements.md](docs/requirements.md), [docs/design.md](docs/design.md), [docs/spikes.md](docs/spikes.md).
 
 ## Layout
 
-| Path | What |
-|---|---|
-| `src/PodcastToYoto.Core` | Yoto API client (OAuth/PKCE, content, media upload), RSS parsing, episode download |
-| `src/PodcastToYoto.Web` | ASP.NET Core + Blazor Server app: UI, Yoto auth endpoints, EF Core/SQLite, (soon) sync engine |
-| `tests/PodcastToYoto.Tests` | xUnit tests (`dotnet test`) |
-| `tools/YotoSpike` | CLI used to validate Yoto API behaviour |
-| `docs/` | Requirements, design, spike notes |
+| Path                        | What                                                                                          |
+| --------------------------- | --------------------------------------------------------------------------------------------- |
+| `src/PodcastToYoto.Core`    | Yoto API client (OAuth/PKCE, content, media upload), RSS parsing, episode download            |
+| `src/PodcastToYoto.Web`     | ASP.NET Core + Blazor Server app: UI, Yoto auth endpoints, EF Core/SQLite, (soon) sync engine |
+| `tests/PodcastToYoto.Tests` | xUnit tests (`dotnet test`)                                                                   |
+| `tools/YotoSpike`           | CLI used to validate Yoto API behaviour                                                       |
+| `docs/`                     | Requirements, design, spike notes                                                             |
+
+## Yoto app setup
+
+PodcastToYoto talks to Yoto as you, so it needs its own Yoto developer app. This is a one-off.
+
+1. Sign in at <https://dashboard.yoto.dev/> with your Yoto account and create an app. Copy its **Client ID**. There's
+   no client secret: the login uses the authorization code flow with PKCE.
+2. Add a redirect URI of `{App:PublicBaseUrl}/auth/callback` for every instance you run, e.g.
+   `https://yoto.example.com/auth/callback` for the server and `https://dev.yoto.example.com/auth/callback` for a dev
+   instance. The portal accepts non-loopback HTTPS URIs as well as loopback ones, so for a purely local setup set
+   `App:PublicBaseUrl` to `http://127.0.0.1:5164` and register `http://127.0.0.1:5164/auth/callback`.
+3. Give the app the Client ID (`Yoto:ClientId` via user-secrets in dev, `YOTO_CLIENT_ID` in `deploy/.env` for the
+   container) and start it, then use **Connect Yoto account** on the home page to log in.
+
+Things that bit me along the way:
+
+- The app asks for `user:content:view user:content:manage user:icons:manage offline_access`. Yoto's docs say `manage`
+  includes `view`, but `GET /content/{cardId}` returns 403 without `user:content:view`, and the icon library needs
+  `user:icons:manage`. If the scopes change, the home page lists the missing ones; **Reconnect** to grant them.
+- Access tokens last about 8 hours and are refreshed automatically. **Refresh tokens are single-use**, so each instance
+  (dev, prod) needs its own database and its own login; two instances sharing a login will keep logging each other out.
+
+The raw notes from validating the API are in [docs/spikes.md](docs/spikes.md).
 
 ## Dev setup
 
@@ -33,31 +75,31 @@ dotnet run --project src/PodcastToYoto.Web --launch-profile http
 
 - Migrations are applied automatically on startup.
 - The dev instance has its own `.data/` and its own Yoto login. Never share a DB between dev and prod: refresh tokens are single-use, so the two would log each other out. Point dev playlists at test Yoto playlists so both instances don't sync the same card.
-- `App:PublicBaseUrl` must be the externally reachable URL. The Yoto redirect URI is `{PublicBaseUrl}/auth/callback` and has to be registered in the Yoto developer portal.
+- `App:PublicBaseUrl` must be the externally reachable URL. `{PublicBaseUrl}/auth/callback` has to be registered as a redirect URI on your Yoto app (see [Yoto app setup](#yoto-app-setup)).
 - Runtime state (SQLite DB, Data Protection keys) lives in `.data/` at the repo root in Development (git-ignored) and `/data` in the container. `src/PodcastToYoto.Web/Data/` is source code (EF model + migrations) and is committed.
 
 ## Configuration
 
-| Key | Default | Notes |
-|---|---|---|
-| `App:PublicBaseUrl` | (required) | e.g. `https://yoto.example.com`; user-secrets in dev, `YOTO_HOST` in `deploy/.env` for the container |
-| `App:DataDirectory` | `/data` | relative paths resolve against the content root |
-| `Yoto:ClientId` | (required) | user-secrets in dev, `Yoto__ClientId` env var in the container |
-| `Yoto:Scopes` | `user:content:view user:content:manage offline_access` | `view` is needed explicitly for `GET /content/{id}` |
-| `Sync:DefaultPollInterval` | `01:00:00` | |
-| `Sync:RunOnStartup` | `true` | |
-| `Sync:DryRun` | `false` | |
-| `Notifications:HomeAssistant:BaseUrl` | (off) | e.g. `https://homeassistant.example.com` |
-| `Notifications:HomeAssistant:WebhookId` | | POSTs JSON to `/api/webhook/{id}`; no token needed |
-| `Notifications:HomeAssistant:Service` | | e.g. `notify.mobile_app_phone` or `persistent_notification.create` |
-| `Notifications:HomeAssistant:Token` | | long-lived access token, only for `Service` |
-| `Notifications:HomeAssistant:Events` | all | any of `PlaylistUpdated`, `SyncFailed`, `YotoNeedsLogin` |
+| Key                                     | Default                                                                  | Notes                                                                                                |
+| --------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `App:PublicBaseUrl`                     | (required)                                                               | e.g. `https://yoto.example.com`; user-secrets in dev, `YOTO_HOST` in `deploy/.env` for the container |
+| `App:DataDirectory`                     | `/data`                                                                  | relative paths resolve against the content root                                                      |
+| `Yoto:ClientId`                         | (required)                                                               | user-secrets in dev, `Yoto__ClientId` env var in the container                                       |
+| `Yoto:Scopes`                           | `user:content:view user:content:manage user:icons:manage offline_access` | see [Yoto app setup](#yoto-app-setup)                                                                |
+| `Sync:DefaultPollInterval`              | `01:00:00`                                                               |                                                                                                      |
+| `Sync:RunOnStartup`                     | `true`                                                                   |                                                                                                      |
+| `Sync:DryRun`                           | `false`                                                                  |                                                                                                      |
+| `Notifications:HomeAssistant:BaseUrl`   | (off)                                                                    | e.g. `https://homeassistant.example.com`                                                             |
+| `Notifications:HomeAssistant:WebhookId` |                                                                          | POSTs JSON to `/api/webhook/{id}`; no token needed                                                   |
+| `Notifications:HomeAssistant:Service`   |                                                                          | e.g. `notify.mobile_app_phone` or `persistent_notification.create`                                   |
+| `Notifications:HomeAssistant:Token`     |                                                                          | long-lived access token, only for `Service`                                                          |
+| `Notifications:HomeAssistant:Events`    | all                                                                      | any of `PlaylistUpdated`, `SyncFailed`, `YotoNeedsLogin`                                             |
 
 ### Home Assistant
 
 Either (or both):
 
-- **Webhook** (most flexible): create an automation with a *Webhook* trigger, set `WebhookId` to its id. The body is
+- **Webhook** (most flexible): create an automation with a _Webhook_ trigger, set `WebhookId` to its id. The body is
   `{ kind, title, message, playlist_id, playlist, page_url, playlist_url }`, available as `trigger.json.*` in the
   automation. (`subscription_id`, `subscription` and `subscription_url` are still sent, with the playlist's values, so
   automations written before playlists held several podcasts keep working.)
@@ -100,6 +142,10 @@ Upgrading migrates each existing subscription into a one-podcast playlist with t
 schedule and history, so nothing is re-uploaded or republished. Exports from before then import the same way.
 
 ## Deploy (container)
+
+This deployment process is specific to my home server setup. You will likely need to make modifications to get it
+working on your own setup. I host mine behind a Traefik proxy which handles the SSL certificates I need, but you can
+easily set up your Yoto application to support localhost development.
 
 The image is self-contained: port 8080, non-root user (UID 1654), all state in `/data`.
 
@@ -146,12 +192,11 @@ A nightly backup (03:30 local time by default) writes `podcast-to-yoto-<timestam
 **Settings → Backups** shows recent backups (downloadable) and has **Back up now** and **Export settings** (the same
 `export.json` on its own, which **Settings → Import** reads back).
 
-| Key | Default | |
-|---|---|---|
-| `Backup:Enabled` | `true` | |
+| Key                | Default   |                                                                                                  |
+| ------------------ | --------- | ------------------------------------------------------------------------------------------------ |
+| `Backup:Enabled`   | `true`    |                                                                                                  |
 | `Backup:Directory` | `backups` | relative to the data directory; point it at a separate mount to keep backups off the data volume |
-| `Backup:TimeOfDay` | `03:30` | container local time (`TZ`) |
-| `Backup:Keep` | `14` | |
+| `Backup:TimeOfDay` | `03:30`   | container local time (`TZ`)                                                                      |
+| `Backup:Keep`      | `14`      |                                                                                                  |
 
 To restore: stop the container, unzip `app.db` and `keys/` into the data directory (replacing what's there), `chown -R 1654:1654`, start it again.
-

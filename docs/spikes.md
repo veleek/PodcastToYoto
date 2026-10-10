@@ -20,11 +20,10 @@ Tool: `tools/YotoSpike` (no NuGet dependencies). State lives in `./.yoto-spike/`
 
 ## Setup
 
-1. Create an app at <https://dashboard.yoto.dev/> → note the **Client ID**.
-2. Register redirect URIs:
-   - `http://127.0.0.1:8787/callback` (spike / local dev)
-   - `https://<your-host>/auth/callback` (service; this is what S4 tests)
-3. `$env:YOTO_CLIENT_ID = "<client id>"`
+Create the Yoto app as described in [Yoto app setup](../README.md#yoto-app-setup), then for the spike tool:
+
+1. Also register `http://127.0.0.1:8787/callback` as a redirect URI.
+2. `$env:YOTO_CLIENT_ID = "<client id>"`
 
 ## Runbook
 
