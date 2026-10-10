@@ -8,8 +8,9 @@
 <section class="card">
     <h2>Podcast logo icon</h2>
     <p class="muted">
-        For podcasts whose episodes don't match Yoto's icons well: make a 16×16 icon from the artwork and show it on the player,
-        either when an episode has no other icon or on every episode. Hand-picked episode icons still win.
+        For podcasts whose episodes don't match Yoto's icons well: make a 16×16 icon from the artwork, or pick one of your own
+        or Yoto's icons, and show it on the player either when an episode has no other icon or on every episode.
+        Hand-picked episode icons still win.
     </p>
 
     @if (Podcast.LogoIconMediaId is not null)
@@ -37,6 +38,7 @@
         <button @onclick="GenerateAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_source))">
             @(Podcast.LogoIconMediaId is null ? "Generate icons" : "Make a new one")
         </button>
+        <button disabled="@_busy" @onclick="() => _choosing = true">Choose an existing icon</button>
     </div>
 
     @if (_variants is not null)
@@ -66,17 +68,26 @@
     @if (_message is not null) { <div class="toast">@_message</div> }
 </section>
 
+@if (_choosing)
+{
+    <LogoIconChooser PodcastName="@Podcast.Name" Index="Index" CurrentMediaId="@Podcast.LogoIconMediaId"
+                     OnChoose="ChooseAsync" OnClose="() => _choosing = false" />
+}
+
 @code {
     [Parameter, EditorRequired] public Subscription Podcast { get; set; } = default!;
 
     /// <summary>Raised after the podcast's logo icon or its mode changed.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
 
+    /// <summary>Yoto's public icons, for choosing one of those instead (null when not loaded).</summary>
+    [Parameter] public IconIndex? Index { get; set; }
+
     private string _source = "";
     private IReadOnlyList<LogoIconVariant>? _variants;
     private LogoIconVariant? _selected;
     private LogoIconMode _mode = LogoIconMode.Fallback;
-    private bool _busy;
+    private bool _busy, _choosing;
     private string? _message;
     private int _podcastId;
 
@@ -141,6 +152,26 @@
             _message = ex is YotoApiException { StatusCode: 403 }
                 ? "Yoto refused the upload (needs the user:icons:manage scope). Reconnect Yoto on the dashboard."
                 : $"Upload failed: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>Use an icon already on Yoto. Keeps the current mode, or uses it as a fallback when it was off.</summary>
+    private async Task ChooseAsync(IconCandidate icon)
+    {
+        _choosing = false;
+        _busy = true;
+        try
+        {
+            var mode = Podcast.LogoIcon == LogoIconMode.Off ? LogoIconMode.Fallback : Podcast.LogoIcon;
+            await Subscriptions.SetLogoIconAsync(Podcast.Id, icon.MediaId, icon.Url, mode);
+            _variants = null;
+            _selected = null;
+            _message = $"Using {(string.IsNullOrEmpty(icon.Title) ? "that icon" : $"“{icon.Title}”")} {ModeText(mode)}. Applies on the next sync.";
+            await OnChanged.InvokeAsync();
         }
         finally
         {

@@ -31,7 +31,8 @@ public class TransferTests
         Assert.Equal("Bedtime", p.Settings.Name);
         Assert.False(p.Settings.Enabled);
         Assert.Equal(50, p.Settings.MaxTracks);
-        Assert.Equal(TrackOrder.OldestFirst, p.Settings.Order);
+        Assert.Equal(PlaylistOrder.OldestFirst, p.Settings.Order);
+        Assert.False(p.Settings.GroupByPodcast);
         Assert.Equal(30, p.Settings.PollIntervalMinutes);
         Assert.Equal("ABC", p.YotoCardId);
 
@@ -41,5 +42,26 @@ public class TransferTests
         Assert.False(pod.Settings.MatchIcons);
         Assert.Equal(["g1"], pod.Favourites);
         Assert.Equal("m2", pod.Icons["g2"]);
+    }
+
+    [Theory]
+    [InlineData("GroupedByPodcast", null, PlaylistOrder.NewestFirst, true)]
+    [InlineData("OldestFirst", "true", PlaylistOrder.OldestFirst, true)]
+    [InlineData("OldestFirst", null, PlaylistOrder.OldestFirst, false)]
+    public void Playlist_order_reads_old_and_new_files(string order, string? group, PlaylistOrder expectedOrder, bool expectedGroup)
+    {
+        var groupJson = group is null ? "" : $", \"groupByPodcast\": {group}";
+        var json = $$"""
+            { "version": 2, "playlists": [ { "settings": { "name": "Mix", "order": "{{order}}"{{groupJson}} },
+              "podcasts": [ { "settings": { "name": "a", "feedUrl": "https://x/a" } } ] } ] }
+            """;
+        var p = Assert.Single(SubscriptionTransfer.Parse(new MemoryStream(Encoding.UTF8.GetBytes(json))).AllPlaylists());
+        Assert.Equal(expectedOrder, p.Settings.Order);
+        Assert.Equal(expectedGroup, p.Settings.GroupByPodcast);
+
+        var written = System.Text.Json.JsonSerializer.Serialize(p.Settings, SubscriptionTransfer.Json);
+        var back = System.Text.Json.JsonSerializer.Deserialize<PlaylistSettings>(written, SubscriptionTransfer.Json)!;
+        Assert.Equal(expectedOrder, back.Order);
+        Assert.Equal(expectedGroup, back.GroupByPodcast);
     }
 }

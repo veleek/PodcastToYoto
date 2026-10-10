@@ -77,5 +77,13 @@ public class LogoIconTests
         Assert.Equal("yoto:#logo", SyncEngine.IconFor(ep, pod, null));
         ep.IconMediaId = "picked";
         Assert.Equal("yoto:#picked", SyncEngine.IconFor(ep, pod, null)); // hand-picked always wins
+        ep.IconMediaId = Episode.PodcastDefaultIcon;
+        pod.LogoIcon = LogoIconMode.Fallback;
+        Assert.Equal("yoto:#logo", SyncEngine.IconFor(ep, pod, null)); // cleared: podcast default
+        pod.LogoIcon = LogoIconMode.Off;
+        Assert.Null(SyncEngine.IconFor(ep, pod, null));
+        ep.IconMediaId = Episode.NoIcon;
+        pod.LogoIcon = LogoIconMode.Always;
+        Assert.Null(SyncEngine.IconFor(ep, pod, null)); // cleared: no icon at all, even over "always"
     }
 }

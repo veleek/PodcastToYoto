@@ -16,11 +16,12 @@
         </label>
 
         <label>
-            <span class="cap">Track order</span>
+            <span class="cap">Order by</span>
             <InputSelect @bind-Value="Model.Order">
-                <option value="@TrackOrder.NewestFirst">By release date, newest first</option>
-                <option value="@TrackOrder.OldestFirst">By release date, oldest first</option>
-                <option value="@TrackOrder.GroupedByPodcast">Grouped by podcast (in the podcast order below)</option>
+                <option value="@PlaylistOrder.NewestFirst">Newest first</option>
+                <option value="@PlaylistOrder.OldestFirst">Oldest first</option>
+                <option value="@PlaylistOrder.TitleAscending">Alphabetically A–Z</option>
+                <option value="@PlaylistOrder.TitleDescending">Alphabetically Z–A</option>
             </InputSelect>
         </label>
 
@@ -36,6 +37,8 @@
             <ValidationMessage For="() => Model.CoverImageUrl" />
         </label>
     </div>
+
+    <label class="check"><InputCheckbox @bind-Value="Model.GroupByPodcast" /> Group by podcast</label>
 
     @if (LockEnabled)
     {

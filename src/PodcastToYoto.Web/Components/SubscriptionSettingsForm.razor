@@ -27,22 +27,19 @@
             <ValidationMessage For="() => Model.MaxTracks" />
         </label>
 
-        <label>
-            <span class="cap">Order <span class="muted">(when the playlist groups by podcast)</span></span>
-            <InputSelect @bind-Value="Model.Order">
-                <option value="@PlaylistOrder.NewestFirst">Newest first</option>
-                <option value="@PlaylistOrder.OldestFirst">Oldest first</option>
-            </InputSelect>
-        </label>
-
-        <label>
-            <span class="cap">Podcast logo icon @(HasLogoIcon ? "" : "(generate one below first)")</span>
-            <InputSelect @bind-Value="Model.LogoIcon" disabled="@(!HasLogoIcon)">
-                <option value="@LogoIconMode.Off">Don't use</option>
-                <option value="@LogoIconMode.Fallback">When no other icon matches</option>
-                <option value="@LogoIconMode.Always">On every episode</option>
-            </InputSelect>
-        </label>
+        @if (PlaylistGroups)
+        {
+            <label>
+                <span class="cap">Order by</span>
+                <InputSelect @bind-Value="Model.GroupOrder">
+                    <option value="">Same as the playlist</option>
+                    <option value="@PlaylistOrder.NewestFirst">Newest first</option>
+                    <option value="@PlaylistOrder.OldestFirst">Oldest first</option>
+                    <option value="@PlaylistOrder.TitleAscending">Alphabetically A–Z</option>
+                    <option value="@PlaylistOrder.TitleDescending">Alphabetically Z–A</option>
+                </InputSelect>
+            </label>
+        }
     </div>
 
     <label class="check"><InputCheckbox @bind-Value="Model.IncludeTrailers" /> Include trailers</label>
@@ -62,7 +59,7 @@
     [Parameter] public bool Busy { get; set; }
     [Parameter] public bool LockFeedUrl { get; set; }
 
-    /// <summary>A logo icon has been generated, so the logo icon setting can be used.</summary>
-    [Parameter] public bool HasLogoIcon { get; set; }
+    /// <summary>The playlist groups by podcast, so this podcast's own episode order can be set (hidden otherwise).</summary>
+    [Parameter] public bool PlaylistGroups { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
 }

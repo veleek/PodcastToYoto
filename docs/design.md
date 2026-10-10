@@ -167,7 +167,7 @@ Runs per subscription, one subscription at a time:
 | `/` Dashboard | Yoto connection banner (Connect / Reconnect); subscription cards with status, last sync, next poll, episode counts, **Sync now** |
 | `/subscriptions/new` | Feed URL → preview (title, cover, latest episodes) → settings → target playlist: pick existing (`/content/mine`) or "create new" |
 | `/subscriptions/{id}` | Settings; **Episodes** table (favourite toggle, on-playlist indicator, date, duration); **Planned playlist** preview; sync history; dry-run button |
-| `/settings` | Export / import subscriptions + favourites as JSON; read-only view of configuration |
+| `/settings` | Backups (back up now, export settings, download), import JSON; read-only view of configuration |
 
 ## Configuration
 
@@ -203,6 +203,8 @@ Dev: `launchSettings.json` binds `http://0.0.0.0:5164`. Container: listens on 80
 7. **M7 Ops** ✅ *(2026-10-06)*: nightly in-app backup (`BackupService`: SQLite online backup + Data Protection keys + JSON export → zip, keep 14, Settings card with download / back up now); `build.ps1 -Deploy` ships the image to the server (docker save → scp → docker load, or a registry with `-Registry`) and restarts it with compose over ssh.
 
 8. **M8 Multi-podcast playlists** ✅ *(2026-10-08)*: `Playlist` is the top-level entity (Yoto playlist, title, cover, schedule, sync state, history, max total tracks, order: newest / oldest first or grouped by podcast) and owns ordered `Subscription`s (one per podcast, with its own recent count, max episodes, order, trailers, icon settings, and an "included" flag). The planner picks per podcast, then merges, caps and orders; the sync polls each included podcast (one broken feed doesn't block the rest) and publishes as before. Migration `MultiPodcastPlaylists` turns each subscription into a one-podcast playlist with the same id, card, title, cover and history, so nothing republishes. Podcast logo icons: 16×16 crops of the artwork generated with SkiaSharp, uploaded via `POST /media/displayIcons/user/me/upload`, used as a fallback or on every episode. Export format v2 (v1 still imports). UI: dashboard lists playlists; `/playlists/{id}` (podcasts, planned tracks, history); `/playlists/{id}/podcasts/{id}` (podcast settings, logo icon, episodes); old `/subscriptions/{id}` links redirect.
+
+   **M8.1** *(2026-10-10)*: track order split into `Order` (newest / oldest first, title A–Z / Z–A) and `GroupByPodcast`; a podcast's own order (`UseOwnOrder`) applies only when grouped (migration `PlaylistGrouping`; old `GroupedByPodcast` values and exports map across). Icon picker: "Podcast default" and "Clear" sentinels in `Episode.IconMediaId`, and editable from the playlist page; logo icon can be an existing custom (`GET /media/displayIcons/user/me`) or public Yoto icon. Drag-and-drop podcast order; merged Backups card with Export settings; phone layout fixes.
 
 ## Later / ideas
 

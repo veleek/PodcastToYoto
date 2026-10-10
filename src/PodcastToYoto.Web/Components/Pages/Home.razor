@@ -122,7 +122,7 @@
                     @if (p.CoverUrl is not null) { <img src="@p.CoverUrl" alt="" /> }
                     <div class="grow">
                         <div><a class="stretch" href="/playlists/@p.Id"><strong>@p.Name</strong></a></div>
-                        <div class="muted">@PodcastsText(p)</div>
+                        <div class="muted one-line" title="@PodcastsText(p)">@PodcastsText(p)</div>
                         <div class="muted">@p.EpisodeCount episodes · @p.FavouriteCount favourites · synced @Format.Ago(p.LastSyncedAt, Time.GetUtcNow()) · next @NextText(p.Id)
                             @if (p.YotoCardId is not null) { <span> · </span><CardLink CardId="@p.YotoCardId" Title="Yoto" /> }
                         </div>

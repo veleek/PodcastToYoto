@@ -9,7 +9,7 @@ public static class PlaylistPlanner
 {
     /// <summary>
     /// A whole playlist: each included podcast picks its own episodes (newest N ∪ favourites, capped at its max), then the
-    /// combined list is capped at the playlist's max and ordered by date or grouped by podcast.
+    /// combined list is capped at the playlist's max and ordered by release date, optionally grouped by podcast.
     /// Uses each subscription's <see cref="Subscription.Episodes"/>.
     /// </summary>
     public static PlannedPlaylist Plan(Playlist playlist, IEnumerable<Subscription> subscriptions)
@@ -41,14 +41,9 @@ public static class PlaylistPlanner
             newestFirst = kept;
         }
 
-        IReadOnlyList<Episode> ordered = playlist.Order switch
-        {
-            TrackOrder.OldestFirst => newestFirst.AsEnumerable().Reverse().ToList(),
-            TrackOrder.GroupedByPodcast => groups
-                .SelectMany(g => g.Sub.Order == PlaylistOrder.OldestFirst ? g.Episodes.AsEnumerable().Reverse() : g.Episodes)
-                .ToList(),
-            _ => newestFirst,
-        };
+        IReadOnlyList<Episode> ordered = playlist.GroupByPodcast
+            ? groups.SelectMany(g => Ordered(g.Episodes, g.Sub.UseOwnOrder ? g.Sub.Order : playlist.Order)).ToList()
+            : Ordered(newestFirst, playlist.Order).ToList();
 
         if (podcasts.Count == 0) warnings.Add("No podcasts are included in this playlist.");
         return new PlannedPlaylist(ordered, warnings);
@@ -58,10 +53,28 @@ public static class PlaylistPlanner
     public static PlannedPlaylist Plan(Subscription s, IEnumerable<Episode> episodes)
     {
         var (newestFirst, warnings) = Select(s, episodes);
-        IReadOnlyList<Episode> ordered = s.Order == PlaylistOrder.OldestFirst
-            ? newestFirst.AsEnumerable().Reverse().ToList()
-            : newestFirst;
-        return new PlannedPlaylist(ordered, warnings);
+        return new PlannedPlaylist(Ordered(newestFirst, s.Order).ToList(), warnings);
+    }
+
+    private static readonly StringComparer TitleComparer =
+        StringComparer.Create(System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.NumericOrdering);
+
+    /// <summary>Orders a newest-first list. Title orders are stable, so equal titles stay newest first.</summary>
+    private static IEnumerable<Episode> Ordered(List<Episode> newestFirst, PlaylistOrder order) => order switch
+    {
+        PlaylistOrder.OldestFirst => newestFirst.AsEnumerable().Reverse(),
+        PlaylistOrder.TitleAscending => newestFirst.OrderBy(e => TitleKey(e.Title), TitleComparer),
+        PlaylistOrder.TitleDescending => newestFirst.OrderByDescending(e => TitleKey(e.Title), TitleComparer),
+        _ => newestFirst,
+    };
+
+    /// <summary>Title without leading emoji, punctuation or spaces (e.g. "🪜 Rocking the Ladder 🪜" → "Rocking the Ladder 🪜").</summary>
+    internal static string TitleKey(string title)
+    {
+        var i = 0;
+        while (i < title.Length && !char.IsLetterOrDigit(title, i)) i += char.IsSurrogatePair(title, i) ? 2 : 1;
+        return title[i..];
     }
 
     /// <summary>Newest <see cref="Subscription.RecentCount"/> ∪ favourites, capped at <see cref="Subscription.MaxTracks"/>; newest first.</summary>

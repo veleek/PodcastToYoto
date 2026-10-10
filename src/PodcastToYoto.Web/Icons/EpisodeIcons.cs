@@ -12,8 +12,23 @@ public static class EpisodeIcons
     public static IconMatch? Match(Episode e, Subscription podcast, IconIndex? index) =>
         podcast.UseDefaultIcon || index is null ? null : IconMatcher.Match(e.Title, index);
 
+    /// <summary>What an episode shows without an emoji match: the podcast's logo icon when it's turned on, else the player default.</summary>
+    public static ShownIcon PodcastDefault(Subscription podcast) =>
+        podcast.LogoIconMediaId is not null && podcast.LogoIcon != LogoIconMode.Off
+            ? new ShownIcon(podcast.LogoIconUrl, "Podcast logo", "Podcast logo")
+            : new ShownIcon(null, "Default", "Default player icon");
+
     public static ShownIcon Describe(Episode e, Subscription podcast, IconIndex? index, IconMatch? match)
     {
+        if (e.IconMediaId == Episode.PodcastDefaultIcon)
+        {
+            var d = PodcastDefault(podcast);
+            return d with { Tip = $"{d.Tip} (automatic icon cleared)" };
+        }
+
+        if (e.IconMediaId == Episode.NoIcon)
+            return new ShownIcon(null, "Default", "Default player icon (cleared)");
+
         if (e.IconMediaId is { } id)
         {
             var picked = index?.Find(id);

@@ -54,4 +54,12 @@ public static class Format
             : d.TotalHours < 48 ? $"{(int)d.TotalHours} h ago"
             : $"{(int)d.TotalDays} days ago";
     }
+
+    public static string Order(PodcastToYoto.Web.Data.PlaylistOrder order) => order switch
+    {
+        PodcastToYoto.Web.Data.PlaylistOrder.OldestFirst => "oldest first",
+        PodcastToYoto.Web.Data.PlaylistOrder.TitleAscending => "A–Z",
+        PodcastToYoto.Web.Data.PlaylistOrder.TitleDescending => "Z–A",
+        _ => "newest first",
+    };
 }

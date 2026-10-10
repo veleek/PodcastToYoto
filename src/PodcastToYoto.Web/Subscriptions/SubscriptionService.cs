@@ -82,14 +82,21 @@ public sealed class SubscriptionService(
     }
 
     /// <summary>Moves a podcast up (negative) or down (positive) in its playlist's order.</summary>
-    public async Task MoveAsync(int id, int delta, CancellationToken ct = default)
+    public Task MoveAsync(int id, int delta, CancellationToken ct = default) =>
+        MoveCoreAsync(id, from => from + delta, ct);
+
+    /// <summary>Moves the podcast to <paramref name="index"/> in its playlist's order (0 = first).</summary>
+    public Task MoveToAsync(int id, int index, CancellationToken ct = default) =>
+        MoveCoreAsync(id, _ => index, ct);
+
+    private async Task MoveCoreAsync(int id, Func<int, int> target, CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var playlistId = await db.Subscriptions.Where(x => x.Id == id).Select(x => x.PlaylistId).SingleAsync(ct);
         var subs = await db.Subscriptions.Where(x => x.PlaylistId == playlistId).OrderBy(x => x.Position).ThenBy(x => x.Id).ToListAsync(ct);
 
         var from = subs.FindIndex(x => x.Id == id);
-        var to = Math.Clamp(from + delta, 0, subs.Count - 1);
+        var to = Math.Clamp(target(from), 0, subs.Count - 1);
         if (from == to) return;
 
         var s = subs[from];

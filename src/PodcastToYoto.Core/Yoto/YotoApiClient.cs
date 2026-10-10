@@ -138,9 +138,16 @@ public sealed class YotoApiClient
     // ---- Icons ---------------------------------------------------------------------------
 
     /// <summary>GET /media/displayIcons/user/yoto — Yoto's public 16x16 icon library (needs user:icons:manage).</summary>
-    public async Task<IReadOnlyList<YotoIcon>> GetPublicIconsAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<YotoIcon>> GetPublicIconsAsync(CancellationToken ct = default) =>
+        GetIconsAsync("media/displayIcons/user/yoto", ct);
+
+    /// <summary>GET /media/displayIcons/user/me — custom icons uploaded to this account (needs user:icons:manage).</summary>
+    public Task<IReadOnlyList<YotoIcon>> GetUserIconsAsync(CancellationToken ct = default) =>
+        GetIconsAsync("media/displayIcons/user/me", ct);
+
+    private async Task<IReadOnlyList<YotoIcon>> GetIconsAsync(string path, CancellationToken ct)
     {
-        using var doc = await SendJsonAsync(HttpMethod.Get, "media/displayIcons/user/yoto", null, ct);
+        using var doc = await SendJsonAsync(HttpMethod.Get, path, null, ct);
         var list = new List<YotoIcon>();
         if (!doc.RootElement.TryGetProperty("displayIcons", out var icons) || icons.ValueKind != JsonValueKind.Array)
             return list;

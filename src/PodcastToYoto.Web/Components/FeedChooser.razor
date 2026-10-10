@@ -17,7 +17,7 @@
     }
     <div class="row">
         <input class="text grow" placeholder="https://… RSS feed URL" @bind="_url" @bind:event="oninput" @onkeydown="OnKey" />
-        <button @onclick="PreviewAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_url))">Preview</button>
+        <button @onclick="PreviewAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_url))">@if (_busy) { <span class="spinner"></span><text>Loading…</text> } else { <text>Preview</text> }</button>
     </div>
     @if (_error is not null)
     {

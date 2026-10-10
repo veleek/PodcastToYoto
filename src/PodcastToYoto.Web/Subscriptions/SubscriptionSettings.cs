@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using PodcastToYoto.Web.Data;
 
 namespace PodcastToYoto.Web.Subscriptions;
@@ -21,15 +22,29 @@ public sealed class SubscriptionSettings
     [Range(1, 100, ErrorMessage = "Between 1 and 100 (Yoto's track limit).")]
     public int MaxTracks { get; set; } = 100;
 
-    /// <summary>Order of this podcast's episodes when the playlist groups by podcast.</summary>
+    /// <summary>This podcast's own order when the playlist groups by podcast; only used with <see cref="UseOwnOrder"/>.</summary>
     public PlaylistOrder Order { get; set; } = PlaylistOrder.NewestFirst;
+
+    public bool UseOwnOrder { get; set; }
+
+    /// <summary>Form binding for the two above: null = same as the playlist.</summary>
+    [JsonIgnore]
+    public PlaylistOrder? GroupOrder
+    {
+        get => UseOwnOrder ? Order : null;
+        set
+        {
+            UseOwnOrder = value is not null;
+            if (value is { } o) Order = o;
+        }
+    }
 
     public bool IncludeTrailers { get; set; }
 
     /// <summary>Pick each episode's icon from the emoji in its title.</summary>
     public bool MatchIcons { get; set; } = true;
 
-    /// <summary>When to show the podcast's own logo icon (needs one generated first).</summary>
+    /// <summary>When to show the podcast's own logo icon. Export only: it's set with the icon (SetLogoIconAsync), not by ApplyTo.</summary>
     public LogoIconMode LogoIcon { get; set; } = LogoIconMode.Off;
 
     public static SubscriptionSettings From(Subscription s) => new()
@@ -40,6 +55,7 @@ public sealed class SubscriptionSettings
         RecentCount = s.RecentCount,
         MaxTracks = s.MaxTracks,
         Order = s.Order,
+        UseOwnOrder = s.UseOwnOrder,
         IncludeTrailers = s.IncludeTrailers,
         MatchIcons = !s.UseDefaultIcon,
         LogoIcon = s.LogoIcon,
@@ -53,9 +69,9 @@ public sealed class SubscriptionSettings
         s.RecentCount = RecentCount;
         s.MaxTracks = MaxTracks;
         s.Order = Order;
+        s.UseOwnOrder = UseOwnOrder;
         s.IncludeTrailers = IncludeTrailers;
         s.UseDefaultIcon = !MatchIcons;
-        s.LogoIcon = LogoIcon;
     }
 }
 
@@ -72,7 +88,25 @@ public sealed class PlaylistSettings
     [Range(1, 100, ErrorMessage = "Between 1 and 100 (Yoto's track limit).")]
     public int MaxTracks { get; set; } = 100;
 
-    public TrackOrder Order { get; set; } = TrackOrder.NewestFirst;
+    [JsonIgnore]
+    public PlaylistOrder Order { get; set; } = PlaylistOrder.NewestFirst;
+
+    public bool GroupByPodcast { get; set; }
+
+    /// <summary>
+    /// <see cref="Order"/> as exported. Files written before the order and grouping were split could say "GroupedByPodcast";
+    /// that reads as newest first, grouped.
+    /// </summary>
+    [JsonPropertyName("order")]
+    public string OrderJson
+    {
+        get => Order.ToString();
+        set
+        {
+            if (value == "GroupedByPodcast") GroupByPodcast = true;
+            else Order = Enum.Parse<PlaylistOrder>(value, ignoreCase: true);
+        }
+    }
 
     /// <summary>Null → global default.</summary>
     [Range(5, 24 * 60, ErrorMessage = "Between 5 and 1440 minutes.")]
@@ -88,6 +122,7 @@ public sealed class PlaylistSettings
         Enabled = p.Enabled,
         MaxTracks = p.MaxTracks,
         Order = p.Order,
+        GroupByPodcast = p.GroupByPodcast,
         PollIntervalMinutes = p.PollInterval is { } i ? (int)i.TotalMinutes : null,
         CoverImageUrl = p.CoverImageUrl,
     };
@@ -98,6 +133,7 @@ public sealed class PlaylistSettings
         p.Enabled = Enabled;
         p.MaxTracks = MaxTracks;
         p.Order = Order;
+        p.GroupByPodcast = GroupByPodcast;
         p.PollInterval = PollIntervalMinutes is { } m ? TimeSpan.FromMinutes(m) : null;
         p.CoverImageUrl = string.IsNullOrWhiteSpace(CoverImageUrl) ? null : CoverImageUrl.Trim();
     }

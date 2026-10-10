@@ -22,6 +22,7 @@ Requires the .NET 10 SDK.
 # one-off
 dotnet tool install --global dotnet-ef
 dotnet user-secrets set Yoto:ClientId <client id> --project src/PodcastToYoto.Web
+dotnet user-secrets set App:PublicBaseUrl https://dev.yoto.example.com --project src/PodcastToYoto.Web
 
 # after any change to the EF model
 dotnet ef migrations add <Name> --project src/PodcastToYoto.Web --output-dir Data/Migrations
@@ -39,7 +40,7 @@ dotnet run --project src/PodcastToYoto.Web --launch-profile http
 
 | Key | Default | Notes |
 |---|---|---|
-| `App:PublicBaseUrl` | (required) | e.g. `https://yoto.example.com` |
+| `App:PublicBaseUrl` | (required) | e.g. `https://yoto.example.com`; user-secrets in dev, `YOTO_HOST` in `deploy/.env` for the container |
 | `App:DataDirectory` | `/data` | relative paths resolve against the content root |
 | `Yoto:ClientId` | (required) | user-secrets in dev, `Yoto__ClientId` env var in the container |
 | `Yoto:Scopes` | `user:content:view user:content:manage offline_access` | `view` is needed explicitly for `GET /content/{id}` |
@@ -74,18 +75,24 @@ against icon titles. No match → the player's default icon. Turn it off per pod
 
 **Podcast logo icons**: for podcasts whose titles don't map onto Yoto's icons, a podcast's settings page can make
 16×16 icons from its artwork (whole image or centre crops; natural, bold or posterised colours), upload the chosen one
-to Yoto as a custom icon, and use it when an episode has no other icon or on every episode. A hand-picked episode icon
-always wins.
+to Yoto as a custom icon, and use it when an episode has no other icon or on every episode. **Choose an existing icon**
+uses one of your account's custom icons or one of Yoto's built-in icons instead. A hand-picked episode icon always wins.
+
+Episode icons can be changed from the podcast page or the playlist's planned tracks. Besides any Yoto icon, the picker
+offers **Podcast default** (drop the automatic match: the logo icon when that's turned on, otherwise the player's
+default) and **Clear** (no icon at all).
 
 ## Playlists and podcasts
 
 A **playlist** is one Yoto MYO playlist; it draws from one or more **podcasts**.
 
-- Each podcast has its own rules: newest N episodes, favourites, a max episodes cap, trailers, icon settings, and its
-  own order (used when the playlist groups by podcast). It can be excluded without being removed.
+- Each podcast has its own rules: newest N episodes, favourites, a max episodes cap, trailers, icon settings, and
+  optionally its own episode order when the playlist groups by podcast. It can be excluded without being removed.
+- Podcasts are reordered on the playlist page by dragging their ☰ handle (or focusing it and using the arrow keys).
 - The playlist has the Yoto playlist, title, cover (first podcast's artwork unless overridden), sync schedule, a max
-  total tracks cap (oldest non-favourites are dropped first, across podcasts), and the track order: by release date
-  (newest or oldest first) or grouped by podcast in the playlist's podcast order.
+  total tracks cap (oldest non-favourites are dropped first, across podcasts), and the track order: newest first,
+  oldest first, or alphabetically A–Z / Z–A (leading emoji and punctuation ignored, numbers in numeric order),
+  optionally grouped by podcast in the playlist's podcast order.
 - Suggested podcasts on the add-podcast page: Silly Stories for Kids, But Why, Flip and Mozi, Who Smarted?
   (`src/PodcastToYoto.Web/Subscriptions/PodcastSuggestions.cs`).
 
@@ -136,7 +143,8 @@ cd .. && docker compose up -d podcast-to-yoto
 
 A nightly backup (03:30 local time by default) writes `podcast-to-yoto-<timestamp>.zip` to `{data}/backups`, keeping the newest 14. Each zip holds
 `app.db` (SQLite online backup, safe while running), `keys/` (Data Protection keys, needed to decrypt the stored Yoto login) and `export.json`.
-**Settings → Backups** shows recent backups (downloadable) and has **Back up now**.
+**Settings → Backups** shows recent backups (downloadable) and has **Back up now** and **Export settings** (the same
+`export.json` on its own, which **Settings → Import** reads back).
 
 | Key | Default | |
 |---|---|---|

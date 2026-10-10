@@ -17,136 +17,184 @@
 <h1 style="font-size:1.2rem">Settings</h1>
 
 <section class="card">
-    <h2>Backup</h2>
-    <p class="muted">Playlists, their podcasts, settings, target Yoto playlists, favourites and icons. Episode history and uploads are not included; they are rebuilt from the feeds.</p>
-    <div class="row">
-        <a class="button" href="/export.json" download>Download export</a>
-    </div>
-</section>
-
-<section class="card">
     <h2>Backups</h2>
     <p class="muted">
         Each backup is a zip of the database, the encryption keys for the stored Yoto login, and the JSON export.
         Keep these private: with the keys, the zip can act as your Yoto login.
     </p>
+    <p class="muted">
+        <strong>Export settings</strong> downloads just the JSON: playlists, their podcasts, settings, target Yoto
+        playlists,
+        favourites and icons, with no login. Episode history and uploads aren't included; they're rebuilt from the
+        feeds.
+    </p>
     <dl class="kv">
         <dt>Schedule</dt>
-        <dd>@(BackupOpts.CurrentValue.Enabled ? $"Daily at {BackupOpts.CurrentValue.TimeOfDay:HH:mm} · next {Format.Local(Backups.NextRun())}" : "Off")</dd>
-        <dt>Location</dt><dd><code>@Backups.BackupDirectory</code></dd>
-        <dt>Keeping</dt><dd>newest @BackupOpts.CurrentValue.Keep</dd>
+        <dd>@(BackupOpts.CurrentValue.Enabled ? $"Daily at {BackupOpts.CurrentValue.TimeOfDay:HH:mm} · next           {Format.Local(Backups.NextRun())}" : "Off")</dd>
+        <dt>Location</dt>
+        <dd><code>@Backups.BackupDirectory</code></dd>
+        <dt>Keeping</dt>
+        <dd>Newest @BackupOpts.CurrentValue.Keep</dd>
     </dl>
     <div class="row">
         <button @onclick="BackupNowAsync" disabled="@_busy">Back up now</button>
-        @if (_backupMessage is not null) { <span class="muted">@_backupMessage</span> }
+        <a class="button" href="/export.json" download>Export settings</a>
+        @if (_backupMessage is not null)
+        {
+            <span class="muted">@_backupMessage</span>
+        }
     </div>
     @if (_backups.Count > 0)
     {
         <ul class="plain">
             @foreach (var b in _backups.Take(5))
             {
-                <li><a href="/backups/@b.Name" download>@b.Name</a> <span class="muted">· @((b.Size / 1024.0).ToString("F0")) KB</span></li>
-            }
-        </ul>
-        @if (_backups.Count > 5) { <p class="muted">…and @(_backups.Count - 5) older.</p> }
-    }
-</section>
-
-<section class="card">
-    <h2>Import</h2>
-    <p class="muted">
-        Playlists matching an existing one (same Yoto playlist, or same name when neither has one) are updated; others are created.
-        Podcasts are matched by feed URL; new ones are added and their feeds checked. Favourites in the file replace the current
-        favourites of each imported podcast. Exports from before playlists held several podcasts import as one-podcast playlists.
-    </p>
-    <InputFile OnChange="LoadFileAsync" accept=".json,application/json" />
-    @if (_error is not null)
-    {
-        <div class="alert" style="margin-top:.75rem">@_error</div>
-    }
-    @if (_file is not null)
-    {
-        <div class="toast">
-            @{ var playlists = _file.AllPlaylists(); }
-            <div>Export from @Format.Local(_file.ExportedAt) with @playlists.Count playlist(s):</div>
-            <ul class="plain">
-                @foreach (var p in playlists)
-                {
-                    <li>@p.Settings.Name <span class="muted">· </span>@if (p.YotoCardId is null) { <span class="muted">new Yoto playlist</span> } else { <CardLink CardId="@p.YotoCardId" Title="Yoto" /> }<span class="muted"> · @string.Join(", ", p.Podcasts.Select(x => x.Settings.Name)) · @p.Podcasts.Sum(x => x.Favourites.Count) favourites</span></li>
+                <li><a class="cardlink" href="/backups/@b.Name" download>@b.Name</a> <span class="muted">· @((b.Size /
+                                                                                                1024.0).ToString("F0")) KB</span></li>
                 }
             </ul>
-            <div class="row" style="margin-top:.5rem">
-                <button class="primary" disabled="@_busy" @onclick="ImportAsync">Import</button>
-                <button @onclick="() => _file = null">Cancel</button>
-            </div>
-        </div>
-    }
-    @if (_result is not null)
-    {
-        <div class="toast">@_result</div>
-    }
-</section>
-
-<section class="card">
-    <h2>Notifications</h2>
-    <dl class="kv">
-        <dt>Log</dt><dd>Always on</dd>
-        <dt>Home Assistant</dt>
-        <dd>
-            @if (HaOpts.CurrentValue.IsConfigured)
+            @if (_backups.Count > 5)
             {
-                <span>@HaOpts.CurrentValue.BaseUrl</span>
-                @if (!string.IsNullOrWhiteSpace(HaOpts.CurrentValue.WebhookId)) { <span class="muted"> · webhook</span> }
-                @if (!string.IsNullOrWhiteSpace(HaOpts.CurrentValue.Service)) { <span class="muted"> · @HaOpts.CurrentValue.Service</span> }
-                <span class="muted"> · events: @(HaOpts.CurrentValue.Events.Count == 0 ? "all" : string.Join(", ", HaOpts.CurrentValue.Events))</span>
+                <p class="muted">…and @(_backups.Count - 5) older.</p>
             }
-            else
-            {
-                <span class="muted">Not configured (set <code>Notifications__HomeAssistant__*</code>)</span>
-            }
-        </dd>
-    </dl>
-    <div class="row">
-        <button @onclick="TestNotificationsAsync" disabled="@_busy">Send test notification</button>
-    </div>
-    @if (_testResults is not null)
-    {
-        <ul class="plain">
-            @foreach (var line in _testResults) { <li>@line</li> }
-        </ul>
-    }
-</section>
-
-<section class="card">
-    <h2>Yoto icon library</h2>
-    <p class="muted">Cached on disk and refreshed from Yoto every @((int)PodcastToYoto.Web.Icons.IconCatalog.Ttl.TotalDays) days.</p>
-    <dl class="kv">
-        <dt>Icons</dt><dd>@(IconCatalog.Count == 0 ? "not loaded" : IconCatalog.Count.ToString())</dd>
-        <dt>Fetched</dt><dd>@(IconCatalog.FetchedAt is null ? "never" : $"{Format.Ago(IconCatalog.FetchedAt, Time.GetUtcNow())} ({Format.Local(IconCatalog.FetchedAt)})")</dd>
-        @if (IconCatalog.LastError is not null)
-        {
-            <dt>Last error</dt><dd class="err-text">@IconCatalog.LastError</dd>
         }
-    </dl>
-    <div class="row">
-        <button @onclick="RefreshIconsAsync" disabled="@_busy">Refresh now</button>
-        @if (_iconMessage is not null) { <span class="muted">@_iconMessage</span> }
-    </div>
-</section>
+    </section>
 
-<section class="card">
-    <h2>Configuration</h2>
-    <p class="muted">Read-only; set via appsettings / environment variables (<code>Section__Key</code>).</p>
-    <dl class="kv">
-        <dt>Public URL</dt><dd>@AppOpts.Value.PublicBaseUrl</dd>
-        <dt>Yoto redirect URI</dt><dd>@AppOpts.Value.YotoRedirectUri</dd>
-        <dt>Data directory</dt><dd>@AppOpts.Value.DataDirectory</dd>
-        <dt>Yoto scopes</dt><dd>@OAuth.Scopes</dd>
-        <dt>Default sync interval</dt><dd>@Format.Interval(SyncOpts.CurrentValue.DefaultPollInterval)</dd>
-        <dt>Sync on startup</dt><dd>@(SyncOpts.CurrentValue.RunOnStartup ? "Yes" : "No")</dd>
-        <dt>Global dry run</dt><dd>@(SyncOpts.CurrentValue.DryRun ? "On: nothing is written to Yoto" : "Off")</dd>
-    </dl>
-</section>
+    <section class="card">
+        <h2>Import</h2>
+        <p class="muted">
+            Playlists matching an existing one (same Yoto playlist, or same name when neither has one) are updated; others
+            are created.
+            Podcasts are matched by feed URL; new ones are added and their feeds checked. Favourites in the file replace the
+            current
+            favourites of each imported podcast. Exports from before playlists held several podcasts import as one-podcast
+            playlists.
+        </p>
+        <InputFile OnChange="LoadFileAsync" accept=".json,application/json" />
+        @if (_error is not null)
+        {
+            <div class="alert" style="margin-top:.75rem">@_error</div>
+        }
+        @if (_file is not null)
+        {
+            <div class="toast">
+                @{
+                    var playlists = _file.AllPlaylists();
+                }
+                <div>Export from @Format.Local(_file.ExportedAt) with @playlists.Count playlist(s):</div>
+                <ul class="plain">
+                    @foreach (var p in playlists)
+                    {
+                        <li>@p.Settings.Name <span class="muted">· </span>@if (p.YotoCardId is null) {
+                            <span class="muted">new Yoto
+                                playlist</span>
+                            } else
+                            {
+                                <CardLink CardId="@p.YotoCardId" Title="Yoto" />
+                            }
+                            <span class="muted"> · @string.Join(", ",
+                                                                                                                                                    p.Podcasts.Select(x => x.Settings.Name)) · @p.Podcasts.Sum(x => x.Favourites.Count)
+                                favourites</span>
+                            </li>
+                        }
+                    </ul>
+                    <div class="row" style="margin-top:.5rem">
+                        <button class="primary" disabled="@_busy" @onclick="ImportAsync">Import</button>
+                        <button @onclick="() => _file = null">Cancel</button>
+                    </div>
+                </div>
+            }
+            @if (_result is not null)
+            {
+                <div class="toast">@_result</div>
+            }
+        </section>
+
+        <section class="card">
+            <h2>Notifications</h2>
+            <dl class="kv">
+                <dt>Log</dt>
+                <dd>Always on</dd>
+                <dt>Home Assistant</dt>
+                <dd>
+                    @if (HaOpts.CurrentValue.IsConfigured)
+                    {
+                        <span>@HaOpts.CurrentValue.BaseUrl</span>
+                        @if (!string.IsNullOrWhiteSpace(HaOpts.CurrentValue.WebhookId))
+                        {
+                            <span class="muted"> · webhook</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(HaOpts.CurrentValue.Service))
+                        {
+                            <span class="muted"> ·
+                                @HaOpts.CurrentValue.Service</span>
+                            }
+                            <span class="muted"> · events: @(HaOpts.CurrentValue.Events.Count == 0 ? "all" : string.Join(", ",
+                                                                                                                                                HaOpts.CurrentValue.Events))</span>
+                            }
+            else
+                            {
+                                <span class="muted">Not configured (set <code>Notifications__HomeAssistant__*</code>)</span>
+                            }
+                        </dd>
+                    </dl>
+                    <div class="row">
+                        <button @onclick="TestNotificationsAsync" disabled="@_busy">Send test notification</button>
+                    </div>
+                    @if (_testResults is not null)
+                    {
+                        <ul class="plain">
+                            @foreach (var line in _testResults)
+                            {
+                                <li>@line</li>
+                            }
+                        </ul>
+                    }
+                </section>
+
+                <section class="card">
+                    <h2>Yoto icon library</h2>
+                    <p class="muted">Cached on disk and refreshed from Yoto every
+                        @((int)PodcastToYoto.Web.Icons.IconCatalog.Ttl.TotalDays) days.</p>
+                        <dl class="kv">
+                            <dt>Icons</dt>
+                            <dd>@(IconCatalog.Count == 0 ? "not loaded" : IconCatalog.Count.ToString())</dd>
+                            <dt>Fetched</dt>
+                            <dd>@(IconCatalog.FetchedAt is null ? "never" : $"{Format.Ago(IconCatalog.FetchedAt, Time.GetUtcNow())} ({Format.Local(IconCatalog.FetchedAt)})")</dd>
+                            @if (IconCatalog.LastError is not null)
+                            {
+                                <dt>Last error</dt>
+                                <dd class="err-text">@IconCatalog.LastError</dd>
+                            }
+                        </dl>
+                        <div class="row">
+                            <button @onclick="RefreshIconsAsync" disabled="@_busy">Refresh now</button>
+                            @if (_iconMessage is not null)
+                            {
+                                <span class="muted">@_iconMessage</span>
+                            }
+                        </div>
+                    </section>
+
+                    <section class="card">
+                        <h2>Configuration <span class="muted">(Read-only)</span></h2>
+                        <dl class="kv">
+                            <dt>Public URL</dt>
+                            <dd>@AppOpts.Value.PublicBaseUrl</dd>
+                            <dt>Yoto redirect URI</dt>
+                            <dd>@AppOpts.Value.YotoRedirectUri</dd>
+                            <dt>Data directory</dt>
+                            <dd>@AppOpts.Value.DataDirectory</dd>
+                            <dt>Yoto scopes</dt>
+                            <dd>@OAuth.Scopes</dd>
+                            <dt>Default sync interval</dt>
+                            <dd>@Format.Interval(SyncOpts.CurrentValue.DefaultPollInterval)</dd>
+                            <dt>Sync on startup</dt>
+                            <dd>@(SyncOpts.CurrentValue.RunOnStartup ? "Yes" : "No")</dd>
+                            <dt>Global dry run</dt>
+                            <dd>@(SyncOpts.CurrentValue.DryRun ? "On: nothing is written to Yoto" : "Off")</dd>
+                        </dl>
+                    </section>
 
 @code {
     private const long MaxImportBytes = 2 * 1024 * 1024;

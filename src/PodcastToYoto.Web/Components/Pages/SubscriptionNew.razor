@@ -25,7 +25,7 @@ else
             {
                 <div class="alert">This podcast is already in the playlist.</div>
             }
-            <SubscriptionSettingsForm Model="_settings" OnValidSubmit="AddAsync" SubmitLabel="Add podcast" Busy="_busy" LockFeedUrl="true" />
+            <SubscriptionSettingsForm Model="_settings" OnValidSubmit="AddAsync" SubmitLabel="Add podcast" Busy="_busy" LockFeedUrl="true" PlaylistGroups="@_playlist.GroupByPodcast" />
             @if (_error is not null) { <div class="alert">@_error</div> }
         </section>
     }

@@ -43,7 +43,7 @@ else
                         else { <CardLink CardId="@_playlist.YotoCardId" Title="@_playlist.Name" /> }
                     </dd>
                     <dt>Planned</dt>
-                    <dd>@_plan!.Episodes.Count of max @_playlist.MaxTracks tracks · @OrderText(_playlist.Order) · @_plan.Episodes.Count(e => e.AudioId is not null) uploaded</dd>
+                    <dd>@_plan!.Episodes.Count of max @_playlist.MaxTracks tracks · @OrderText(_playlist) · @_plan.Episodes.Count(e => e.AudioId is not null) uploaded</dd>
                     <dt>Last sync</dt>
                     <dd>
                         @Format.Ago(_playlist.LastSyncedAt, Time.GetUtcNow())
@@ -147,14 +147,11 @@ else
             <div class="subs">
                 @foreach (var (s, index) in _playlist.Subscriptions.Select((s, i) => (s, i)))
                 {
-                    <div class="sub @(s.Enabled ? "" : "off")" @key="s.Id">
-                        @if (_playlist.Subscriptions.Count > 1)
-                        {
-                            <div class="order">
-                                <button title="Move up" disabled="@(_busy || index == 0)" @onclick="() => MoveAsync(s.Id, -1)">▲</button>
-                                <button title="Move down" disabled="@(_busy || index == _playlist.Subscriptions.Count - 1)" @onclick="() => MoveAsync(s.Id, 1)">▼</button>
-                            </div>
-                        }
+                    var canDrag = _playlist.Subscriptions.Count > 1 && !_busy;
+                    <div class="sub @(s.Enabled ? "" : "off") @DropClass(index)" @key="s.Id"
+                         @ondragstart="() => _dragFrom = index" @ondragend="() => { _dragFrom = null; _dragOver = null; }"
+                         @ondragenter="() => _dragOver = index" @ondragover:preventDefault="true"
+                         @ondrop="() => DropAsync(index)" @ondrop:preventDefault="true">
                         @if (s.CoverSourceUrl is not null) { <img src="@s.CoverSourceUrl" alt="" /> }
                         <div class="grow">
                             <div><a class="stretch" href="/playlists/@Id/podcasts/@s.Id"><strong>@s.Name</strong></a></div>
@@ -169,6 +166,14 @@ else
                         }
                         @if (!s.Enabled) { <span class="badge none">Not included</span> }
                         else if (s.LastError is not null) { <span class="badge err" title="@s.LastError">Feed error</span> }
+                        @if (_playlist.Subscriptions.Count > 1)
+                        {
+                            @* setData: Firefox only starts a drag once something is set. Arrow keys move it without a mouse. *@
+                            <span class="drag-handle" draggable="@(canDrag ? "true" : "false")" tabindex="0" role="button"
+                                  title="Drag to reorder (or focus and use ↑ ↓)" aria-label="Reorder @s.Name"
+                                  ondragstart="event.dataTransfer.setData('text/plain', ''); event.dataTransfer.effectAllowed = 'move';"
+                                  @onkeydown="e => HandleKeyAsync(e, s.Id)">☰</span>
+                        }
                     </div>
                 }
             </div>
@@ -188,13 +193,14 @@ else
         <div class="table-wrap">
         <table class="eps">
             <thead>
-                <tr><th></th><th title="Position on playlist">#</th><th title="Icon on the player">Icon</th>@if (_multi) {<th>Podcast</th>}<th class="wide-only">Published</th><th>Title</th><th class="wide-only">Length</th><th class="wide-only" title="Uploaded to Yoto">Up</th></tr>
+                <tr><th></th><th title="Position on playlist">#</th><th title="Icon on the player">Icon</th>@if (_multi) {<th class="wide-only">Podcast</th>}<th class="wide-only">Published</th><th>Title</th><th class="wide-only">Length</th><th class="wide-only" title="Uploaded to Yoto">☁️</th></tr>
             </thead>
             <tbody>
                 @foreach (var (e, pos) in _plan.Episodes.Select((e, i) => (e, i + 1)).Where(x => string.IsNullOrWhiteSpace(_filter) || x.e.Title.Contains(_filter, StringComparison.OrdinalIgnoreCase)))
                 {
                     var podcast = _podcasts[e.SubscriptionId];
-                    var icon = EpisodeIcons.Describe(e, podcast, _iconIndex, EpisodeIcons.Match(e, podcast, _iconIndex));
+                    var match = EpisodeIcons.Match(e, podcast, _iconIndex);
+                    var icon = EpisodeIcons.Describe(e, podcast, _iconIndex, match);
                     <tr class="planned @(e.MissingFromFeedSince is null ? "" : "missing")" @key="e.Id">
                         <td>
                             <button class="star @(e.IsFavourite ? "on" : "")" title="@(e.IsFavourite ? "Unpin" : "Pin as favourite")"
@@ -202,21 +208,30 @@ else
                         </td>
                         <td class="num">@pos</td>
                         <td>
-                            @if (icon.Url is { } url) { <img class="icon16" src="@url" alt="@icon.Title" title="@icon.Tip" /> }
+                            @if (_iconIndex is not null)
+                            {
+                                <button class="icon-btn @(e.IconMediaId is null ? "" : "pinned")" title="@icon.Tip · click to change" @onclick="() => _iconFor = e">
+                                    @if (icon.Url is { } url) { <img class="icon16" src="@url" alt="@icon.Title" /> } else { <span>+</span> }
+                                </button>
+                            }
+                            else if (icon.Url is { } url)
+                            {
+                                <img class="icon16" src="@url" alt="@icon.Title" title="@icon.Tip" />
+                            }
                         </td>
                         @if (_multi)
                         {
-                            <td class="pod"><a href="/playlists/@Id/podcasts/@podcast.Id">@podcast.Name</a></td>
+                            <td class="pod wide-only"><a href="/playlists/@Id/podcasts/@podcast.Id">@podcast.Name</a></td>
                         }
                         <td class="num wide-only">@Format.Date(e.PublishedAt)</td>
                         <td class="title">
                             @e.Title
                             @if (e.EpisodeType is "bonus" or "trailer") { <span class="badge after none">@e.EpisodeType</span> }
                             @if (e.MissingFromFeedSince is not null) { <span class="badge after warn" title="Since @Format.Local(e.MissingFromFeedSince)">not in feed</span> }
-                            <div class="narrow-only muted meta">@Format.Date(e.PublishedAt) · @Format.Duration(e.DurationSeconds)@(e.AudioId is null ? "" : " · ✓ uploaded")</div>
+                            <div class="narrow-only muted meta"><div class="meta-row">@if (_multi) { <span class="one-line">@podcast.Name</span> }<span class="nowrap">@(_multi ? "\u00a0· " : "")@Format.Date(e.PublishedAt) · @Format.Duration(e.DurationSeconds)@if (e.AudioId is not null) { <span title="Uploaded to Yoto"> · ☁️</span> }</span></div></div>
                         </td>
                         <td class="num wide-only">@Format.Duration(e.DurationSeconds)</td>
-                        <td class="wide-only">@(e.AudioId is null ? "" : "✓")</td>
+                        <td class="wide-only" title="@(e.AudioId is null ? "" : "Uploaded to Yoto")">@(e.AudioId is null ? "" : "☁️")</td>
                     </tr>
                 }
             </tbody>
@@ -254,6 +269,13 @@ else
     </section>
 }
 
+
+@if (_iconFor is not null && _iconIndex is not null && _podcasts.GetValueOrDefault(_iconFor.SubscriptionId) is { } iconPodcast)
+{
+    <IconPicker Index="_iconIndex" EpisodeTitle="@_iconFor.Title" CurrentMediaId="@_iconFor.IconMediaId"
+                AutoMatch="@EpisodeIcons.Match(_iconFor, iconPodcast, _iconIndex)" PodcastDefault="@EpisodeIcons.PodcastDefault(iconPodcast)"
+                OnPick="PickIconAsync" OnClose="() => _iconFor = null" />
+}
 @code {
     [Parameter] public int Id { get; set; }
 
@@ -269,6 +291,7 @@ else
     private string? _pickCardId;
     private string _filter = "";
     private string? _message, _activity;
+    private Episode? _iconFor;
 
     private string PodcastCountText => _playlist!.Subscriptions.Count switch
     {
@@ -300,7 +323,7 @@ else
 
         try
         {
-            _iconIndex = _playlist.Subscriptions.Any(s => !s.UseDefaultIcon) ? await Icons.GetAsync() : null;
+            _iconIndex = await Icons.GetAsync(); // also needed for the picker, even with automatic icons off
         }
         catch (PodcastToYoto.Yoto.YotoAuthException)
         {
@@ -330,12 +353,8 @@ else
         });
     }
 
-    private static string OrderText(TrackOrder o) => o switch
-    {
-        TrackOrder.OldestFirst => "oldest first",
-        TrackOrder.GroupedByPodcast => "grouped by podcast",
-        _ => "newest first",
-    };
+    private static string OrderText(Playlist p) =>
+        Format.Order(p.Order) + (p.GroupByPodcast ? ", grouped by podcast" : "");
 
     private void SyncNow()
     {
@@ -390,12 +409,38 @@ else
         }
     }
 
-    private async Task MoveAsync(int podcastId, int delta)
+    private int? _dragFrom, _dragOver;
+
+    /// <summary>Shows where a dragged podcast would land: above the target when moving up, below when moving down.</summary>
+    private string DropClass(int index) =>
+        _dragFrom is not { } from || _dragOver != index || from == index ? "" : from > index ? "drop-before" : "drop-after";
+
+    private async Task DropAsync(int index)
+    {
+        var from = _dragFrom;
+        _dragFrom = _dragOver = null;
+        if (from is not { } f || f == index) return;
+
+        // Reorder locally first so the list doesn't jump back while saving.
+        var subs = _playlist!.Subscriptions;
+        var moved = subs[f];
+        subs.RemoveAt(f);
+        subs.Insert(index, moved);
+        await ReorderAsync(() => Subscriptions.MoveToAsync(moved.Id, index));
+    }
+
+    private async Task HandleKeyAsync(KeyboardEventArgs e, int podcastId)
+    {
+        var delta = e.Key switch { "ArrowUp" => -1, "ArrowDown" => 1, _ => 0 };
+        if (delta != 0 && !_busy) await ReorderAsync(() => Subscriptions.MoveAsync(podcastId, delta));
+    }
+
+    private async Task ReorderAsync(Func<Task> move)
     {
         _busy = true;
         try
         {
-            await Subscriptions.MoveAsync(podcastId, delta);
+            await move();
             await LoadAsync();
         }
         finally
@@ -446,6 +491,21 @@ else
         Nav.NavigateTo("/");
     }
 
+    private async Task PickIconAsync(string? mediaId)
+    {
+        var e = _iconFor!;
+        _iconFor = null;
+        await Subscriptions.SetIconAsync(e.Id, mediaId);
+        e.IconMediaId = mediaId;
+        _message = mediaId switch
+        {
+            null => $"“{e.Title}” is back to its automatic icon. Applies on the next sync.",
+            Episode.PodcastDefaultIcon => $"“{e.Title}” now uses the podcast's default icon. Applies on the next sync.",
+            Episode.NoIcon => $"Icon cleared for “{e.Title}”. Applies on the next sync.",
+            _ => $"Icon set for “{e.Title}”. Applies on the next sync.",
+        };
+    }
+
     private async Task ToggleFavouriteAsync(Episode e)
     {
         var value = !e.IsFavourite;
@@ -465,7 +525,8 @@ else
 
     private static string BadgeClass(SyncResult r) => r switch
     {
-        SyncResult.Updated or SyncResult.NoChange => "ok",
+        SyncResult.Updated => "ok",
+        SyncResult.NoChange => "info",
         SyncResult.Failed => "err",
         SyncResult.Running => "warn",
         _ => "none",

@@ -8,7 +8,17 @@
         </div>
 
         <div class="row picker-current">
-            @if (CurrentMediaId is not null)
+            @if (CurrentMediaId == Episode.PodcastDefaultIcon)
+            {
+                <span>Podcast default:</span> @Shown(PodcastDefault)
+                @UseAutomatic()
+            }
+            else if (CurrentMediaId == Episode.NoIcon)
+            {
+                <span>Cleared: no icon (the player's default).</span>
+                @UseAutomatic()
+            }
+            else if (CurrentMediaId is not null)
             {
                 <span>Picked by hand:</span>
                 @if (Index.Find(CurrentMediaId) is { } cur)
@@ -19,9 +29,7 @@
                 {
                     <code>@CurrentMediaId</code>
                 }
-                <button @onclick="() => OnPick.InvokeAsync(null)">
-                    Use automatic@(AutoMatch is null ? " (none)" : $": {AutoMatch.Icon.Title}")
-                </button>
+                @UseAutomatic()
             }
             else if (AutoMatch is not null)
             {
@@ -30,7 +38,7 @@
             }
             else
             {
-                <span class="muted">No automatic match: the player shows its default icon.</span>
+                <span class="muted">No automatic match: the episode uses the podcast default</span> @Shown(PodcastDefault)
             }
         </div>
 
@@ -39,9 +47,22 @@
         <div class="icon-scroll">
             @if (string.IsNullOrWhiteSpace(_query))
             {
+                <h3 class="icon-group">Suggested</h3>
+                <div class="icon-grid">
+                    <button class="icon-cell @(CurrentMediaId == Episode.PodcastDefaultIcon ? "on" : "")"
+                            title="Skip the automatic match and use the podcast's default (@PodcastDefault.Title)"
+                            @onclick="() => OnPick.InvokeAsync(Episode.PodcastDefaultIcon)">
+                        @if (PodcastDefault.Url is { } url) { <img class="icon16 x2" src="@url" alt="" /> } else { <span class="icon-none"></span> }
+                        <span>Podcast default</span>
+                    </button>
+                    <button class="icon-cell @(CurrentMediaId == Episode.NoIcon ? "on" : "")" title="No icon at all: the player shows its default"
+                            @onclick="() => OnPick.InvokeAsync(Episode.NoIcon)">
+                        <span class="icon-none">∅</span>
+                        <span>Clear</span>
+                    </button>
+                </div>
                 @if (_suggested.Count > 0)
                 {
-                    <h3 class="icon-group">Suggested</h3>
                     @Grid(_suggested)
                 }
                 @foreach (var group in Index.Groups)
@@ -73,13 +94,16 @@
     [Parameter] public string? CurrentMediaId { get; set; }
     [Parameter] public IconMatch? AutoMatch { get; set; }
 
-    /// <summary>Raised with the chosen media id, or null for "automatic".</summary>
+    /// <summary>What the episode shows without a match (the podcast's logo icon, or the player default).</summary>
+    [Parameter, EditorRequired] public ShownIcon PodcastDefault { get; set; } = default!;
+
+    /// <summary>Raised with the chosen media id, null for "automatic", <see cref="Episode.PodcastDefaultIcon"/> or <see cref="Episode.NoIcon"/>.</summary>
     [Parameter] public EventCallback<string?> OnPick { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
 
     private string _query = "";
     private IReadOnlyList<IconCandidate> _suggested = [];
-    private string? Selected => CurrentMediaId ?? AutoMatch?.Icon.MediaId;
+    private string? Selected => CurrentMediaId is Episode.PodcastDefaultIcon or Episode.NoIcon ? null : CurrentMediaId ?? AutoMatch?.Icon.MediaId;
 
     protected override void OnInitialized()
     {
@@ -107,6 +131,19 @@
                 </button>
             }
         </div>
+    };
+
+    private RenderFragment Shown(ShownIcon icon) => __builder =>
+    {
+        @if (icon.Url is { } url) { <img class="icon16" src="@url" alt="" /> }
+        <span>@icon.Title</span>
+    };
+
+    private RenderFragment UseAutomatic() => __builder =>
+    {
+        <button @onclick="() => OnPick.InvokeAsync(null)">
+            Use automatic@(AutoMatch is null ? " (none)" : $": {AutoMatch.Icon.Title}")
+        </button>
     };
 
     private static string IconTitle(IconCandidate i) =>

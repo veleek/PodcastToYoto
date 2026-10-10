@@ -138,6 +138,9 @@ namespace PodcastToYoto.Web.Data.Migrations
                     b.Property<bool>("Enabled")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("GroupByPodcast")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("LastError")
                         .HasColumnType("TEXT");
 
@@ -237,6 +240,9 @@ namespace PodcastToYoto.Web.Data.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("UseDefaultIcon")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("UseOwnOrder")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");

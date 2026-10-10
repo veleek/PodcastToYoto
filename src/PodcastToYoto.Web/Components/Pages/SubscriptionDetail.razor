@@ -36,7 +36,7 @@ else
                 <dl class="kv">
                     <dt>Playlist</dt>
                     <dd>
-                        <a href="/playlists/@_playlist!.Id">@_playlist.Name</a>
+                        <a class="cardlink" href="/playlists/@_playlist!.Id">@_playlist.Name</a>
                         @if (!_sub.Enabled) { <span class="badge after none">Not included</span> }
                     </dd>
                     <dt>Episodes</dt>
@@ -49,7 +49,7 @@ else
                     }
                 </dl>
                 <div class="row">
-                    <a class="button" href="/playlists/@_playlist.Id">Back to playlist</a>
+                    <a class="button primary" href="/playlists/@_playlist.Id">Back to playlist</a>
                     <button @onclick="PollAsync" disabled="@(_busy || _activity is not null)">Check feed</button>
                     <button @onclick="() => _editing = !_editing">@(_editing ? "Close settings" : "Settings")</button>
                 </div>
@@ -69,7 +69,7 @@ else
     {
         <section class="card">
             <h2>Podcast settings</h2>
-            <SubscriptionSettingsForm Model="_settings" OnValidSubmit="SaveAsync" Busy="_busy" HasLogoIcon="@(_sub.LogoIconMediaId is not null)">
+            <SubscriptionSettingsForm Model="_settings" OnValidSubmit="SaveAsync" Busy="_busy" PlaylistGroups="@_playlist!.GroupByPodcast">
                 @if (_confirmDelete)
                 {
                     <button type="button" class="danger" @onclick="DeleteAsync">Really remove?</button>
@@ -83,7 +83,7 @@ else
             <p class="muted">Removing forgets this podcast's episodes and favourites here; its tracks leave the Yoto playlist on the next sync. To keep it but stop publishing it, untick "Included in the playlist".</p>
         </section>
 
-        <LogoIconPanel Podcast="_sub" OnChanged="LoadAsync" />
+        <LogoIconPanel Podcast="_sub" Index="_iconIndex" OnChanged="LoadAsync" />
     }
 
     <section class="card">
@@ -112,7 +112,7 @@ else
         <div class="table-wrap">
         <table class="eps">
             <thead>
-                <tr><th></th><th title="Position on the playlist">#</th><th title="Icon on the player">Icon</th><th class="wide-only">Published</th><th>Title</th><th class="wide-only">Length</th><th class="wide-only" title="Uploaded to Yoto">Up</th></tr>
+                <tr><th></th><th title="Position on the playlist">#</th><th title="Icon on the player">Icon</th><th class="wide-only">Published</th><th>Title</th><th class="wide-only">Length</th><th class="wide-only" title="Uploaded to Yoto">☁️</th></tr>
             </thead>
             <tbody>
                 @foreach (var e in VisibleEpisodes)
@@ -142,10 +142,10 @@ else
                             @e.Title
                             @if (e.EpisodeType is "bonus" or "trailer") { <span class="badge after none">@e.EpisodeType</span> }
                             @if (e.MissingFromFeedSince is not null) { <span class="badge after warn" title="Since @Format.Local(e.MissingFromFeedSince)">not in feed</span> }
-                            <div class="narrow-only muted meta">@Format.Date(e.PublishedAt) · @Format.Duration(e.DurationSeconds)@(e.AudioId is null ? "" : " · ✓ uploaded")</div>
+                            <div class="narrow-only muted meta">@Format.Date(e.PublishedAt) · @Format.Duration(e.DurationSeconds)@if (e.AudioId is not null) { <span title="Uploaded to Yoto"> · ☁️</span> }</div>
                         </td>
                         <td class="num wide-only">@Format.Duration(e.DurationSeconds)</td>
-                        <td class="wide-only">@(e.AudioId is null ? "" : "✓")</td>
+                        <td class="wide-only" title="@(e.AudioId is null ? "" : "Uploaded to Yoto")">@(e.AudioId is null ? "" : "☁️")</td>
                     </tr>
                 }
             </tbody>
@@ -157,7 +157,7 @@ else
 @if (_iconFor is not null && _iconIndex is not null)
 {
     <IconPicker Index="_iconIndex" EpisodeTitle="@_iconFor.Title" CurrentMediaId="@_iconFor.IconMediaId"
-                AutoMatch="@_iconMatches.GetValueOrDefault(_iconFor.Id)"
+                AutoMatch="@_iconMatches.GetValueOrDefault(_iconFor.Id)" PodcastDefault="@EpisodeIcons.PodcastDefault(_sub!)"
                 OnPick="PickIconAsync" OnClose="() => _iconFor = null" />
 }
 
@@ -292,9 +292,13 @@ else
         _iconFor = null;
         await Subscriptions.SetIconAsync(e.Id, mediaId);
         e.IconMediaId = mediaId;
-        _message = mediaId is null
-            ? $"“{e.Title}” is back to its automatic icon. Applies on the next sync."
-            : $"Icon set for “{e.Title}”. Applies on the next sync.";
+        _message = mediaId switch
+        {
+            null => $"“{e.Title}” is back to its automatic icon. Applies on the next sync.",
+            Episode.PodcastDefaultIcon => $"“{e.Title}” now uses the podcast's default icon. Applies on the next sync.",
+            Episode.NoIcon => $"Icon cleared for “{e.Title}”. Applies on the next sync.",
+            _ => $"Icon set for “{e.Title}”. Applies on the next sync.",
+        };
     }
 
     private async Task DeleteAsync()

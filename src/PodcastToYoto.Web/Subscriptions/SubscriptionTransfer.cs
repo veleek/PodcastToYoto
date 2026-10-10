@@ -80,7 +80,7 @@ public sealed class LegacyExportedSubscription
             Name = Settings.TitleOverride ?? Settings.Name,
             Enabled = Settings.Enabled,
             MaxTracks = Settings.MaxTracks,
-            Order = Settings.Order == PlaylistOrder.OldestFirst ? TrackOrder.OldestFirst : TrackOrder.NewestFirst,
+            Order = Settings.Order,
             PollIntervalMinutes = Settings.PollIntervalMinutes,
         },
         YotoCardId = YotoCardId,

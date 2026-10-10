@@ -20,7 +20,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         // Enums as readable strings.
         builder.Properties<AccountStatus>().HaveConversion<string>();
         builder.Properties<PlaylistOrder>().HaveConversion<string>();
-        builder.Properties<TrackOrder>().HaveConversion<string>();
         builder.Properties<LogoIconMode>().HaveConversion<string>();
         builder.Properties<SyncTrigger>().HaveConversion<string>();
         builder.Properties<SyncResult>().HaveConversion<string>();

@@ -1,0 +1,112 @@
+@using PodcastToYoto.Web.Icons
+@using PodcastToYoto.Yoto
+@inject YotoApiClient Yoto
+
+@* Pick an icon already on Yoto as a podcast's logo icon: one of the account's custom icons, or one of Yoto's own. *@
+<div class="modal-backdrop" @onclick="OnClose">
+    <div class="modal card" role="dialog" aria-label="Choose podcast icon" @onclick:stopPropagation="true">
+        <div class="row card-head">
+            <h2>Icon for @PodcastName</h2>
+            <button class="close" title="Close" @onclick="OnClose">✕</button>
+        </div>
+
+        <div class="row tabs">
+            <button class="@(_tab == Tab.Mine ? "on" : "")" @onclick="() => _tab = Tab.Mine">Your icons</button>
+            <button class="@(_tab == Tab.Yoto ? "on" : "")" @onclick="() => _tab = Tab.Yoto">Yoto icons</button>
+        </div>
+
+        @if (_tab == Tab.Yoto && Index is not null)
+        {
+            <input class="text filter-full" placeholder="Search icons (e.g. tree, hat, train)…" @bind="_query" @bind:event="oninput" />
+        }
+
+        <div class="icon-scroll">
+            @if (_tab == Tab.Mine)
+            {
+                @if (_mine is null && _error is null)
+                {
+                    <p class="muted"><span class="spinner"></span> Loading your icons…</p>
+                }
+                else if (_error is not null)
+                {
+                    <div class="alert">@_error</div>
+                }
+                else if (_mine!.Count == 0)
+                {
+                    <p class="muted">No custom icons on your Yoto account yet.</p>
+                }
+                else
+                {
+                    @Grid(_mine)
+                }
+            }
+            else if (Index is null)
+            {
+                <p class="muted">Yoto's icon library isn't loaded (connect Yoto first).</p>
+            }
+            else
+            {
+                @if (string.IsNullOrWhiteSpace(_query))
+                {
+                    @foreach (var group in Index.Groups)
+                    {
+                        <h3 class="icon-group">@group.Name <span class="muted">(@group.Icons.Count)</span></h3>
+                        @Grid(group.Icons)
+                    }
+                }
+                else
+                {
+                    var results = Index.Search(_query, int.MaxValue);
+                    @if (results.Count == 0) { <p class="muted">No icons match “@_query”.</p> } else { @Grid(results) }
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string PodcastName { get; set; } = "";
+    [Parameter] public IconIndex? Index { get; set; }
+    [Parameter] public string? CurrentMediaId { get; set; }
+
+    /// <summary>Raised with the chosen icon.</summary>
+    [Parameter] public EventCallback<IconCandidate> OnChoose { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private enum Tab { Mine, Yoto }
+
+    private Tab _tab = Tab.Mine;
+    private string _query = "";
+    private IReadOnlyList<IconCandidate>? _mine;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _mine = (await Yoto.GetUserIconsAsync())
+                .Select(i => new IconCandidate(i.MediaId, i.Title, i.Url, i.Tags))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = ex is YotoApiException { StatusCode: 403 }
+                ? "Yoto refused to list your icons (needs the user:icons:manage scope). Reconnect Yoto on the dashboard."
+                : $"Couldn't load your icons: {ex.Message}";
+        }
+    }
+
+    private RenderFragment Grid(IReadOnlyList<IconCandidate> icons) => __builder =>
+    {
+        <div class="icon-grid">
+            @foreach (var icon in icons)
+            {
+                <button @key="icon.MediaId" class="icon-cell @(icon.MediaId == CurrentMediaId ? "on" : "")" title="@icon.Title"
+                        @onclick="() => OnChoose.InvokeAsync(icon)">
+                    <img class="icon16 x2" src="@icon.Url" alt="" loading="lazy" />
+                    <span>@(string.IsNullOrEmpty(icon.Title) ? "Custom icon" : icon.Title)</span>
+                </button>
+            }
+        </div>
+    };
+}

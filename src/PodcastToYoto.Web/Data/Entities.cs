@@ -1,10 +1,8 @@
 namespace PodcastToYoto.Web.Data;
 
 public enum AccountStatus { Disconnected, Connected, NeedsReauth }
-public enum PlaylistOrder { NewestFirst, OldestFirst }
-
-/// <summary>How a playlist orders tracks drawn from several podcasts.</summary>
-public enum TrackOrder { NewestFirst, OldestFirst, GroupedByPodcast }
+/// <summary>Track order: by release date, or by title (ignoring leading emoji and punctuation, numbers in numeric order).</summary>
+public enum PlaylistOrder { NewestFirst, OldestFirst, TitleAscending, TitleDescending }
 
 /// <summary>When a podcast's own logo icon (generated from its artwork and uploaded to Yoto) is shown on the player.</summary>
 public enum LogoIconMode { Off, Fallback, Always }
@@ -49,7 +47,11 @@ public sealed class Playlist
     /// <summary>Cap on tracks across all podcasts (Yoto's limit is 100).</summary>
     public int MaxTracks { get; set; } = 100;
 
-    public TrackOrder Order { get; set; } = TrackOrder.NewestFirst;
+    /// <summary>Release-date order of the tracks (within each podcast when <see cref="GroupByPodcast"/>).</summary>
+    public PlaylistOrder Order { get; set; } = PlaylistOrder.NewestFirst;
+
+    /// <summary>Keep each podcast's tracks together, podcasts in <see cref="Subscription.Position"/> order.</summary>
+    public bool GroupByPodcast { get; set; }
 
     /// <summary>Null → global default.</summary>
     public TimeSpan? PollInterval { get; set; }
@@ -99,8 +101,13 @@ public sealed class Subscription
     /// <summary>Most episodes this podcast contributes (recent + favourites).</summary>
     public int MaxTracks { get; set; } = 100;
 
-    /// <summary>Order of this podcast's episodes when the playlist groups by podcast.</summary>
+    /// <summary>
+    /// This podcast's own episode order, used when the playlist groups by podcast and <see cref="UseOwnOrder"/> is set;
+    /// otherwise the playlist's order applies.
+    /// </summary>
     public PlaylistOrder Order { get; set; } = PlaylistOrder.NewestFirst;
+
+    public bool UseOwnOrder { get; set; }
     public bool IncludeTrailers { get; set; }
 
     /// <summary>
@@ -149,8 +156,15 @@ public sealed class Episode
 
     public bool IsFavourite { get; set; }
 
-    /// <summary>Icon chosen by hand (Yoto media id); overrides automatic emoji matching. Null = automatic.</summary>
+    /// <summary>
+    /// Icon chosen by hand (Yoto media id); overrides automatic emoji matching. Null = automatic.
+    /// <see cref="PodcastDefaultIcon"/> = skip the emoji match and use the podcast's default (its logo icon, or none);
+    /// <see cref="NoIcon"/> = no icon at all (the player's default).
+    /// </summary>
     public string? IconMediaId { get; set; }
+
+    public const string PodcastDefaultIcon = "podcast-default";
+    public const string NoIcon = "none";
     public DateTimeOffset FirstSeenAt { get; set; }
     public DateTimeOffset? MissingFromFeedSince { get; set; }
 

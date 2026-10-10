@@ -162,7 +162,6 @@ public sealed class SyncEngine(
 
         // 2. Plan
         var plan = PlaylistPlanner.Plan(p, p.Subscriptions);
-        foreach (var w in plan.Warnings) logger.LogWarning("Playlist {Id}: {Warning}", id, w);
 
         if (dryRun)
         {
@@ -260,9 +259,10 @@ public sealed class SyncEngine(
     /// </summary>
     public static string? IconFor(Episode e, Subscription podcast, IconIndex? icons)
     {
-        if (e.IconMediaId is { } chosen) return $"yoto:#{chosen}";
-
         var logo = podcast.LogoIconMediaId is { } m && podcast.LogoIcon != LogoIconMode.Off ? $"yoto:#{m}" : null;
+        if (e.IconMediaId == Episode.PodcastDefaultIcon) return logo;
+        if (e.IconMediaId == Episode.NoIcon) return null;
+        if (e.IconMediaId is { } chosen) return $"yoto:#{chosen}";
         if (logo is not null && podcast.LogoIcon == LogoIconMode.Always) return logo;
 
         var matched = podcast.UseDefaultIcon || icons is null ? null : IconMatcher.Match(e.Title, icons)?.Icon.Ref;
