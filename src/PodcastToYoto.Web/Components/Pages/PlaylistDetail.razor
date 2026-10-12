@@ -7,6 +7,7 @@
 @inject PlaylistAdopter Adopter
 @inject SubscriptionNotices Notices
 @inject IconCatalog Icons
+@inject YotoIconsLibrary YotoIcons
 @inject SyncEngine Engine
 @inject SyncActivity Activity
 @inject NavigationManager Nav
@@ -25,6 +26,7 @@ else if (_playlist is null)
 else
 {
     var cover = _playlist.DesiredCoverUrl;
+    <div class="row page-head"><h1>Playlist</h1></div>
     <section class="card">
         <div class="sub-hero @(cover is null ? "no-cover" : "")">
             @if (cover is not null)
@@ -324,6 +326,7 @@ else
         try
         {
             _iconIndex = await Icons.GetAsync(); // also needed for the picker, even with automatic icons off
+            _iconIndex = await YotoIcons.ExtendAsync(_iconIndex); // cached yotoicons.com icons are browsable, never auto-matched
         }
         catch (PodcastToYoto.Yoto.YotoAuthException)
         {
@@ -497,6 +500,7 @@ else
         _iconFor = null;
         await Subscriptions.SetIconAsync(e.Id, mediaId);
         e.IconMediaId = mediaId;
+        if (_iconIndex is not null) _iconIndex = YotoIcons.Extend(_iconIndex); // a yotoicons.com pick may have just been uploaded
         _message = mediaId switch
         {
             null => $"“{e.Title}” is back to its automatic icon. Applies on the next sync.",

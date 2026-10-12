@@ -1,0 +1,94 @@
+@using PodcastToYoto.Web.Icons
+@inject YotoIconsLibrary YotoIcons
+
+@* Search yotoicons.com (one page at a time, on request). Results are cached, so repeating a search costs nothing. *@
+<form class="row yi-search" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
+    <input class="text grow" placeholder="Search yotoicons.com by tag or artist (e.g. dragon, @@pangolinpaw)…" @bind="_query" @bind:event="oninput" />
+    <button class="primary" type="submit" disabled="@(_busy || string.IsNullOrWhiteSpace(_query))">Search</button>
+</form>
+
+@if (_error is not null) { <div class="alert">@_error</div> }
+
+<div class="icon-scroll">
+@if (_results is { } r)
+{
+    <p class="muted">
+        @if (r.Icons.Count == 0)
+        {
+            <span>No icons on yotoicons.com match “@r.Query”.</span>
+        }
+        else
+        {
+            <span>@r.Icons.Count@(r.Total is { } t && t > r.Icons.Count ? $" of {t}" : "") icon(s) for “@r.Query”, fetched @Format.Ago(r.FetchedAt, Time.GetUtcNow()).</span>
+        }
+        <button class="link-btn" disabled="@_busy" title="Fetch this search from yotoicons.com again" @onclick="RefreshAsync">Refresh</button>
+    </p>
+    <IconGrid Icons="r.Icons" SelectedMediaId="@SelectedMediaId" OnPick="OnPick" />
+    @if (r.HasMore)
+    {
+        <div class="row yi-more">
+            <button disabled="@_busy" @onclick="MoreAsync">@(_busy ? "Loading…" : "Load more")</button>
+        </div>
+    }
+}
+else if (_busy)
+{
+    <p class="muted"><span class="spinner"></span> Searching yotoicons.com…</p>
+}
+</div>
+
+<p class="muted yi-about">
+    Community-made icons from <a href="@YotoIconsLibrary.SiteUrl" target="_blank" rel="noopener">yotoicons.com</a>.
+    Searches and images are cached here and also show up in the icon library; a picked icon is uploaded to your Yoto
+    account the first time it's used.
+</p>
+
+@code {
+    [Parameter] public string? SelectedMediaId { get; set; }
+
+    /// <summary>Search for this straight away (the picker's library filter, carried over).</summary>
+    [Parameter] public string? InitialQuery { get; set; }
+    [Parameter] public EventCallback<IconCandidate> OnPick { get; set; }
+
+    /// <summary>Raised after a search fetched new icons, so the caller can refresh its library view.</summary>
+    [Parameter] public EventCallback OnCacheChanged { get; set; }
+
+    [Inject] private TimeProvider Time { get; set; } = default!;
+
+    private string _query = "";
+    private YotoIconsResults? _results;
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(InitialQuery)) return;
+        _query = InitialQuery.Trim();
+        await SearchAsync();
+    }
+
+    private Task SearchAsync() => RunAsync(() => YotoIcons.SearchAsync(_query));
+    private Task MoreAsync() => RunAsync(() => YotoIcons.LoadMoreAsync(_results!.Query));
+    private Task RefreshAsync() => RunAsync(() => YotoIcons.RefreshAsync(_results!.Query));
+
+    private async Task RunAsync(Func<Task<YotoIconsResults>> fetch)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var before = _results;
+            _results = await fetch();
+            if (before is null || _results.Icons.Count != before.Icons.Count || _results.FetchedAt != before.FetchedAt)
+                await OnCacheChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or ArgumentException or TaskCanceledException)
+        {
+            _error = $"Couldn't search yotoicons.com: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

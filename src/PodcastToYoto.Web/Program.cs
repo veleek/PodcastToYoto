@@ -100,6 +100,13 @@ builder.Services.AddSingleton<AudioPipeline>();
 builder.Services.AddSingleton<IconCatalog>();
 builder.Services.AddHttpClient(LogoIconGenerator.HttpClientName, c => c.Timeout = TimeSpan.FromMinutes(1));
 builder.Services.AddSingleton<LogoIconGenerator>();
+builder.Services.AddHttpClient(YotoIconsLibrary.HttpClientName, c =>
+{
+    c.BaseAddress = new Uri(YotoIconsLibrary.SiteUrl);
+    c.Timeout = TimeSpan.FromSeconds(30);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("PodcastToYotoPlaylist/1.0 (self-hosted; cached, on-demand searches)");
+});
+builder.Services.AddSingleton<YotoIconsLibrary>();
 builder.Services.AddSingleton<SyncActivity>();
 builder.Services.AddOptions<HomeAssistantOptions>().BindConfiguration(HomeAssistantOptions.Section);
 builder.Services.AddHttpClient(HomeAssistantChannel.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(15));
@@ -146,6 +153,21 @@ app.MapGet("/backups/{name}", (string name, BackupService backups) =>
     backups.Resolve(name) is { } path
         ? Results.File(path, "application/zip", name)
         : Results.NotFound()).ExcludeFromDescription();
+// yotoicons.com images, from the local cache (downloaded the first time one is shown). Only cached search results.
+app.MapGet("/yotoicons/{id:int}.png", async (int id, YotoIconsLibrary yotoIcons, ILogger<YotoIconsLibrary> log, CancellationToken ct) =>
+{
+    try
+    {
+        return await yotoIcons.GetImagePathAsync(id, ct) is { } path
+            ? Results.File(path, YotoIconsLibrary.ContentType(path), lastModified: File.GetLastWriteTimeUtc(path))
+            : Results.NotFound();
+    }
+    catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
+    {
+        log.LogWarning("Couldn't fetch yotoicons.com icon {Id}: {Error}", id, ex.Message);
+        return Results.StatusCode(StatusCodes.Status502BadGateway);
+    }
+}).ExcludeFromDescription();
 app.MapGet("/export.json", async (SubscriptionTransfer transfer, TimeProvider time, CancellationToken ct) =>
 {
     var file = await transfer.ExportAsync(ct);

@@ -164,10 +164,10 @@ Runs per subscription, one subscription at a time:
 
 | Page | Contents |
 |---|---|
-| `/` Dashboard | Yoto connection banner (Connect / Reconnect); subscription cards with status, last sync, next poll, episode counts, **Sync now** |
+| `/` Dashboard | Playlists with status, last sync, next sync, episode counts; a "Yoto connected" pill, or a banner linking to Settings when Yoto isn't connected or needs re-login |
 | `/subscriptions/new` | Feed URL → preview (title, cover, latest episodes) → settings → target playlist: pick existing (`/content/mine`) or "create new" |
 | `/subscriptions/{id}` | Settings; **Episodes** table (favourite toggle, on-playlist indicator, date, duration); **Planned playlist** preview; sync history; dry-run button |
-| `/settings` | Backups (back up now, export settings, download), import JSON; read-only view of configuration |
+| `/settings` | Yoto account (connect / test / reconnect / disconnect, scopes); backups (back up now, export settings, download), import JSON; read-only view of configuration |
 
 ## Configuration
 

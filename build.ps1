@@ -41,14 +41,15 @@ if (-not $SkipTests) {
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
 }
 
-$sha = (git rev-parse --short HEAD).Trim()
-if (git status --porcelain) { $sha = "$sha-dirty" }
+$commit = (git rev-parse HEAD).Trim()
+$sha = $commit.Substring(0, 7)
+if (git status --porcelain) { $sha = "$sha-dirty"; $commit = "$commit-dirty" }
 
 $repo = if ($Registry) { "$($Registry.TrimEnd('/'))/$Name" } else { $Name }
 $tags = @("${repo}:latest", "${repo}:$sha")
 
 $tagArgs = $tags | ForEach-Object { '-t', $_ }
-docker build --platform $Platform @tagArgs --label "org.opencontainers.image.revision=$sha" .
+docker build --platform $Platform @tagArgs --label "org.opencontainers.image.revision=$sha" --build-arg "GIT_SHA=$commit" .
 if ($LASTEXITCODE -ne 0) { throw 'docker build failed.' }
 Write-Host "Built: $($tags -join ', ')"
 

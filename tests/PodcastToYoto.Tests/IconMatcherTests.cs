@@ -73,26 +73,40 @@ public class IconMatcherTests
     }
 
     [Fact]
-    public void Groups_bucket_by_keywords_with_other_last()
+    public void Groups_bucket_by_keywords_with_other_and_yoto_daily_last()
     {
         var groups = new IconIndex(
         [
             new IconCandidate("1", "Dog", null, ["pet"]),
             new IconCandidate("2", "Tree", null, []),
             new IconCandidate("3", "Ladder", null, []),
-            new IconCandidate("4", "3", null, []),
+            new IconCandidate("4", "Numbers - 3", null, ["numbers", "3"]),
             new IconCandidate("5", "B", null, []),
             new IconCandidate("6", "Saturn", null, ["planet"]),
+            new IconCandidate("7", "Earth 2", null, ["space", "planet"]),       // a digit isn't a number icon
+            new IconCandidate("8", "02_Snake", null, ["snake"]),
+            new IconCandidate("9", "Envelope", null, ["letter", "mail"]),      // tagged "letter", but not a letter
+            new IconCandidate("10", "Snowflake", null, ["ice", "weather"]),    // title beats the "ice" tag
+            new IconCandidate("11", "Yoto Daily - Quiz", null, ["yoto", "daily", "question"]),
+            new IconCandidate("12", "Spiderweb", null, ["px", "spiderweb"]),
+            new IconCandidate("13", "Baking with Yoto - Pancakes", null, []),  // "king" is a People word, but not inside "baking"
         ]).Groups;
 
         string GroupOf(string title) => groups.Single(g => g.Icons.Any(i => i.Title == title)).Name;
 
         Assert.Equal("Animals", GroupOf("Dog"));
         Assert.Equal("Nature & weather", GroupOf("Tree"));
-        Assert.Equal("Numbers", GroupOf("3"));
+        Assert.Equal("Numbers", GroupOf("Numbers - 3"));
+        Assert.Equal("Space", GroupOf("Earth 2"));
+        Assert.Equal("Animals", GroupOf("02_Snake"));
+        Assert.Equal("Home & things", GroupOf("Envelope"));
+        Assert.Equal("Nature & weather", GroupOf("Snowflake"));
+        Assert.Equal("Yoto Daily", GroupOf("Yoto Daily - Quiz"));
+        Assert.Equal("Animals", GroupOf("Spiderweb"));
+        Assert.Equal("Other", GroupOf("Baking with Yoto - Pancakes"));
         Assert.Equal("Letters", GroupOf("B"));
         Assert.Equal("Space", GroupOf("Saturn"));
         Assert.Equal("Other", GroupOf("Ladder"));
-        Assert.Equal("Other", groups[^1].Name);
+        Assert.Equal(["Other", "Yoto Daily"], groups.TakeLast(2).Select(g => g.Name)); // Yoto Daily after Other
     }
 }

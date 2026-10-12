@@ -5,5 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Shown on the Settings page. The SDK appends +<commit sha> (SourceRevisionId) to InformationalVersion. -->
+    <VersionPrefix>0.8.2</VersionPrefix>
   </PropertyGroup>
 </Project>

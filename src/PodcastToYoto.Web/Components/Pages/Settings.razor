@@ -11,10 +11,13 @@
 @inject TimeProvider Time
 @inject PodcastToYoto.Web.Backups.BackupService Backups
 @inject IOptionsMonitor<BackupOptions> BackupOpts
+@inject IWebHostEnvironment Env
 
 <PageTitle>Settings · Podcast → Yoto</PageTitle>
 
-<h1 style="font-size:1.2rem">Settings</h1>
+<div class="row page-head"><h1>Settings</h1></div>
+
+<YotoAccountCard />
 
 <section class="card">
     <h2>Backups</h2>
@@ -195,6 +198,42 @@
                             <dd>@(SyncOpts.CurrentValue.DryRun ? "On: nothing is written to Yoto" : "Off")</dd>
                         </dl>
                     </section>
+
+<section class="card">
+    <h2>About</h2>
+    <p class="muted">Keeps Yoto playlists filled with the latest episodes of your podcasts.</p>
+    <dl class="kv">
+        <dt>Version</dt>
+        <dd>@AppInfo.Version.Version</dd>
+        <dt>Commit</dt>
+        <dd>
+            @if (AppInfo.Version.Commit is null)
+            {
+                <span class="muted">unknown</span>
+            }
+            else
+            {
+                <a href="@AppInfo.Version.CommitUrl" target="_blank" rel="noopener" title="@AppInfo.Version.Commit"><code>@AppInfo.Version.ShortCommit</code></a>
+                @if (AppInfo.Version.Dirty)
+                {
+                    <span class="muted"> · with uncommitted changes</span>
+                }
+            }
+        </dd>
+        <dt>Built</dt>
+        <dd>@Format.Local(AppInfo.BuiltAt)</dd>
+        <dt>Started</dt>
+        <dd>@Format.Ago(AppInfo.StartedAt, Time.GetUtcNow()) (@Format.Local(AppInfo.StartedAt))</dd>
+        <dt>Environment</dt>
+        <dd>@Env.EnvironmentName@(AppInfo.InContainer ? " · container" : "")</dd>
+        <dt>Runtime</dt>
+        <dd>@AppInfo.Runtime</dd>
+        <dt>OS</dt>
+        <dd>@AppInfo.OperatingSystem</dd>
+        <dt>Source</dt>
+        <dd><a href="@AppInfo.RepositoryUrl" target="_blank" rel="noopener">GitHub</a></dd>
+    </dl>
+</section>
 
 @code {
     private const long MaxImportBytes = 2 * 1024 * 1024;

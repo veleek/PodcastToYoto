@@ -2,7 +2,8 @@ using System.Text;
 
 namespace PodcastToYoto.Web.Icons;
 
-public sealed record IconCandidate(string MediaId, string Title, string? Url, IReadOnlyList<string> Tags)
+/// <param name="Credit">Where the icon came from, for tooltips (e.g. "@artist on yotoicons.com"); null for Yoto's own.</param>
+public sealed record IconCandidate(string MediaId, string Title, string? Url, IReadOnlyList<string> Tags, string? Credit = null)
 {
     public string Ref => $"yoto:#{MediaId}";
 }
@@ -12,28 +13,48 @@ public sealed record IconMatch(IconCandidate Icon, string Reason);
 /// <summary>Pre-tokenised icon library for <see cref="IconMatcher"/>.</summary>
 public sealed class IconIndex
 {
-    internal sealed record Entry(IconCandidate Icon, HashSet<string> TitleWords, HashSet<string> TagWords);
+    /// <param name="Matchable">False for extras (e.g. cached yotoicons.com icons): browsable and searchable in the
+    /// pickers, but never chosen automatically, so the UI's automatic match stays the same as the sync's.</param>
+    internal sealed record Entry(IconCandidate Icon, HashSet<string> TitleWords, HashSet<string> TagWords, bool Matchable);
 
     internal IReadOnlyList<Entry> Entries { get; }
+    private readonly IReadOnlyList<IconCandidate> _library;
     private readonly Dictionary<string, IconCandidate> _byId;
 
+    /// <summary>Number of icons, extras included.</summary>
     public int Count => Entries.Count;
 
-    public IconIndex(IEnumerable<IconCandidate> icons)
+    public IconIndex(IEnumerable<IconCandidate> icons) : this(icons, []) { }
+
+    private IconIndex(IEnumerable<IconCandidate> icons, IEnumerable<IconCandidate> extras)
     {
+        _library = icons as IReadOnlyList<IconCandidate> ?? icons.ToList();
         // The library can list the same media more than once (different displayIconIds); keep one per media id so
         // lookups and UI keys are unique.
-        Entries = icons
-            .DistinctBy(i => i.MediaId)
-            .Select(i => new Entry(i,
-                IconMatcher.Words(i.Title).ToHashSet(StringComparer.Ordinal),
-                i.Tags.SelectMany(IconMatcher.Words).ToHashSet(StringComparer.Ordinal)))
+        Entries = _library.Select(i => (Icon: i, Matchable: true))
+            .Concat(extras.Select(i => (Icon: i, Matchable: false)))
+            .DistinctBy(x => x.Icon.MediaId)
+            .Select(x => new Entry(x.Icon,
+                IconMatcher.Words(x.Icon.Title).ToHashSet(StringComparer.Ordinal),
+                x.Icon.Tags.SelectMany(IconMatcher.Words).ToHashSet(StringComparer.Ordinal),
+                x.Matchable))
             .ToList();
         _byId = new Dictionary<string, IconCandidate>(StringComparer.Ordinal);
         foreach (var e in Entries) _byId.TryAdd(e.Icon.MediaId, e.Icon);
     }
 
     public IconCandidate? Find(string mediaId) => _byId.GetValueOrDefault(mediaId);
+
+    /// <summary>
+    /// This library plus <paramref name="extras"/> (replacing any extras added before). Extras show up in browsing,
+    /// search and <see cref="Find"/>, but <see cref="IconMatcher"/> never picks them.
+    /// </summary>
+    public IconIndex WithExtras(IEnumerable<IconCandidate> extras) => new(_library, extras);
+
+    private IconIndex? _withoutExtras;
+
+    /// <summary>Just the library, without any extras (cached once).</summary>
+    public IconIndex WithoutExtras => _withoutExtras ??= Count == _library.Count ? this : new IconIndex(_library);
 
     private IReadOnlyList<IconGroup>? _groups;
 
@@ -178,6 +199,7 @@ public static class IconMatcher
         int bestScore = 0;
         foreach (var e in index.Entries)
         {
+            if (!e.Matchable) continue;
             var score = 0;
             foreach (var w in words)
             {

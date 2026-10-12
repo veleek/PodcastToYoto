@@ -4,9 +4,15 @@
 #>
 [CmdletBinding()]
 param(
+    [switch]$NonInteractive
 )
 
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
-dotnet watch --project src/PodcastToYoto.Web --launch-profile http
+$extraArgs = @()
+if ($NonInteractive) {
+    $extraArgs += "--non-interactive"
+}
+
+dotnet watch --project src/PodcastToYoto.Web --launch-profile http @extraArgs

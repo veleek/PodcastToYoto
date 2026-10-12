@@ -5,6 +5,7 @@
 @inject PlaylistService Playlists
 @inject SubscriptionService Subscriptions
 @inject IconCatalog Icons
+@inject YotoIconsLibrary YotoIcons
 @inject SyncActivity Activity
 @inject NavigationManager Nav
 @inject TimeProvider Time
@@ -21,6 +22,7 @@ else if (_sub is null)
 }
 else
 {
+    <div class="row page-head"><h1>Podcast</h1></div>
     <section class="card">
         @* Grid: cover | title on top, details below. On narrow screens the details span the full width. *@
         <div class="sub-hero @(_sub.CoverSourceUrl is null ? "no-cover" : "")">
@@ -219,7 +221,7 @@ else
         {
             // Not connected / needs re-login: the dashboard says so; just show no icons here.
         }
-        _iconIndex = icons;
+        _iconIndex = await YotoIcons.ExtendAsync(icons); // cached yotoicons.com icons are browsable, never auto-matched
         _iconMatches = _sub.Episodes.ToDictionary(e => e.Id, e => EpisodeIcons.Match(e, _sub, icons));
         Replan();
     }
@@ -292,6 +294,7 @@ else
         _iconFor = null;
         await Subscriptions.SetIconAsync(e.Id, mediaId);
         e.IconMediaId = mediaId;
+        if (_iconIndex is not null) _iconIndex = YotoIcons.Extend(_iconIndex); // a yotoicons.com pick may have just been uploaded
         _message = mediaId switch
         {
             null => $"“{e.Title}” is back to its automatic icon. Applies on the next sync.",

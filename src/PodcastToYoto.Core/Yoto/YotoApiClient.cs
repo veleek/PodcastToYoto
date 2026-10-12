@@ -171,16 +171,19 @@ public sealed class YotoApiClient
     }
 
     /// <summary>
-    /// POST /media/displayIcons/user/me/upload — upload a custom 16x16 icon (PNG). With <paramref name="autoConvert"/> Yoto
-    /// resizes the image itself; without, it must already be 16x16. Re-uploading identical bytes returns the same icon.
+    /// POST /media/displayIcons/user/me/upload — upload a custom 16x16 icon (PNG, or GIF with <paramref name="contentType"/>
+    /// image/gif). With <paramref name="autoConvert"/> Yoto resizes the image itself (and flattens an animated GIF to a
+    /// static PNG); without, it must already be 16x16, and GIFs keep their animation. Re-uploading identical bytes returns
+    /// the same icon.
     /// </summary>
-    public async Task<YotoCustomIcon> UploadCustomIconAsync(byte[] png, string? filename = null, bool autoConvert = false, CancellationToken ct = default)
+    public async Task<YotoCustomIcon> UploadCustomIconAsync(byte[] png, string? filename = null, bool autoConvert = false, CancellationToken ct = default,
+        string contentType = "image/png")
     {
         var path = $"media/displayIcons/user/me/upload?autoConvert={(autoConvert ? "true" : "false")}";
         if (!string.IsNullOrEmpty(filename)) path += $"&filename={Uri.EscapeDataString(filename)}";
 
         var body = new ByteArrayContent(png);
-        body.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        body.Headers.ContentType = new MediaTypeHeaderValue(contentType);
         using var doc = await SendJsonAsync(HttpMethod.Post, path, body, ct);
 
         var icon = doc.RootElement.TryGetProperty("displayIcon", out var d) ? d : doc.RootElement;

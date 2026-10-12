@@ -1,4 +1,5 @@
 @using PodcastToYoto.Web.Icons
+@inject YotoIconsLibrary YotoIcons
 
 <div class="modal-backdrop" @onclick="OnClose">
     <div class="modal card" role="dialog" aria-label="Choose icon" @onclick:stopPropagation="true">
@@ -11,17 +12,15 @@
             @if (CurrentMediaId == Episode.PodcastDefaultIcon)
             {
                 <span>Podcast default:</span> @Shown(PodcastDefault)
-                @UseAutomatic()
             }
             else if (CurrentMediaId == Episode.NoIcon)
             {
                 <span>Cleared: no icon (the player's default).</span>
-                @UseAutomatic()
             }
             else if (CurrentMediaId is not null)
             {
                 <span>Picked by hand:</span>
-                @if (Index.Find(CurrentMediaId) is { } cur)
+                @if (_index.Find(CurrentMediaId) is { } cur)
                 {
                     <img class="icon16" src="@cur.Url" alt="" /> <span>@cur.Title</span>
                 }
@@ -29,7 +28,6 @@
                 {
                     <code>@CurrentMediaId</code>
                 }
-                @UseAutomatic()
             }
             else if (AutoMatch is not null)
             {
@@ -42,30 +40,64 @@
             }
         </div>
 
-        <input class="text filter-full" placeholder="Search icons (e.g. tree, hat, train)…" @bind="_query" @bind:event="oninput" />
-
-        <div class="icon-scroll">
-            @if (string.IsNullOrWhiteSpace(_query))
+        <h3 class="icon-group">Suggested</h3>
+        <div class="icon-row">
+            @if (AutoMatch is not null)
             {
-                <h3 class="icon-group">Suggested</h3>
-                <div class="icon-grid">
-                    <button class="icon-cell @(CurrentMediaId == Episode.PodcastDefaultIcon ? "on" : "")"
-                            title="Skip the automatic match and use the podcast's default (@PodcastDefault.Title)"
-                            @onclick="() => OnPick.InvokeAsync(Episode.PodcastDefaultIcon)">
-                        @if (PodcastDefault.Url is { } url) { <img class="icon16 x2" src="@url" alt="" /> } else { <span class="icon-none"></span> }
-                        <span>Podcast default</span>
-                    </button>
-                    <button class="icon-cell @(CurrentMediaId == Episode.NoIcon ? "on" : "")" title="No icon at all: the player shows its default"
-                            @onclick="() => OnPick.InvokeAsync(Episode.NoIcon)">
-                        <span class="icon-none">∅</span>
-                        <span>Clear</span>
-                    </button>
-                </div>
-                @if (_suggested.Count > 0)
-                {
-                    @Grid(_suggested)
-                }
-                @foreach (var group in Index.Groups)
+                <button class="icon-cell @(CurrentMediaId is null ? "on" : "")" title="Automatic: @AutoMatch.Icon.Title (@AutoMatch.Reason)"
+                        @onclick="() => OnPick.InvokeAsync(null)">
+                    <img class="icon16 x2" src="@AutoMatch.Icon.Url" alt="" />
+                    <span class="icon-label">@AutoMatch.Icon.Title</span>
+                    <span class="icon-badge" aria-hidden="true">auto</span>
+                </button>
+            }
+            @foreach (var icon in _suggested)
+            {
+                <button @key="icon.MediaId" class="icon-cell @(icon.MediaId == Selected ? "on" : "")" title="@icon.Title" @onclick="() => PickAsync(icon)">
+                    <img class="icon16 x2" src="@icon.Url" alt="" />
+                    <span class="icon-label">@icon.Title</span>
+                </button>
+            }
+            @* With no automatic match, automatic already means the podcast default, so this just goes back to automatic. *@
+            <button class="icon-cell @(CurrentMediaId == Episode.PodcastDefaultIcon || (AutoMatch is null && CurrentMediaId is null) ? "on" : "")"
+                    title="@(AutoMatch is null ? $"The podcast's default ({PodcastDefault.Title})" : $"Skip the automatic match and use the podcast's default ({PodcastDefault.Title})")"
+                    @onclick="() => OnPick.InvokeAsync(AutoMatch is null ? null : Episode.PodcastDefaultIcon)">
+                @if (PodcastDefault.Url is { } url) { <img class="icon16 x2" src="@url" alt="" /> } else { <span class="icon-none"></span> }
+                <span class="icon-label">Podcast default</span>
+                @if (AutoMatch is null) { <span class="icon-badge" aria-hidden="true">auto</span> }
+            </button>
+            <button class="icon-cell @(CurrentMediaId == Episode.NoIcon ? "on" : "")" title="No icon at all: the player shows its default"
+                    @onclick="() => OnPick.InvokeAsync(Episode.NoIcon)">
+                <span class="icon-none">∅</span>
+                <span class="icon-label">No icon</span>
+            </button>
+        </div>
+
+        <div class="row tabs">
+            <button class="@(_yotoIcons ? "" : "on")" @onclick="() => _yotoIcons = false">Icon Library</button>
+            <button class="@(_yotoIcons ? "on" : "")" title="Search yotoicons.com" @onclick="() => _yotoIcons = true">Search</button>
+            @if (_busy) { <span class="muted"><span class="spinner"></span> Uploading to Yoto…</span> }
+        </div>
+        @if (_error is not null) { <div class="alert">@_error</div> }
+
+        @if (!_yotoIcons)
+        {
+            <div class="row lib-filter">
+                <input class="text grow" placeholder="Search icons (e.g. tree, hat, train)…" @bind="_query" @bind:event="oninput" />
+                <label class="check" title="Include icons cached from yotoicons.com searches"><input type="checkbox" @bind="ShowYotoIcons" /> yotoicons.com</label>
+            </div>
+        }
+
+        @* The yotoicons.com search scrolls its own results, so its search box stays put. *@
+        <div class="@(_yotoIcons ? "" : "icon-scroll")">
+            @if (_yotoIcons)
+            {
+                @* Carries the library filter over and runs it on yotoicons.com (cached searches don't go out again). *@
+                <YotoIconsSearch InitialQuery="@_query" SelectedMediaId="@Selected" OnPick="PickAsync" OnCacheChanged="() => _index = YotoIcons.Extend(Index)" />
+            }
+            else if (string.IsNullOrWhiteSpace(_query))
+            {
+                @foreach (var group in Browse!.Groups)
                 {
                     <h3 class="icon-group">@group.Name <span class="muted">(@group.Icons.Count)</span></h3>
                     @Grid(group.Icons)
@@ -73,10 +105,10 @@
             }
             else
             {
-                var results = Index.Search(_query, int.MaxValue);
+                var results = Browse!.Search(_query, int.MaxValue);
                 if (results.Count == 0)
                 {
-                    <p class="muted">No icons match “@_query”.</p>
+                    <p class="muted">No icons match “@_query”. Try Search to look on yotoicons.com.</p>
                 }
                 else
                 {
@@ -89,6 +121,15 @@
 </div>
 
 @code {
+    /// <summary>What the Icon Library tab shows: with or without the cached yotoicons.com icons.</summary>
+    private IconIndex? Browse => YotoIcons.ShowInLibrary ? _index : _index?.WithoutExtras;
+
+    private bool ShowYotoIcons
+    {
+        get => YotoIcons.ShowInLibrary;
+        set => YotoIcons.ShowInLibrary = value;
+    }
+
     [Parameter, EditorRequired] public IconIndex Index { get; set; } = default!;
     [Parameter, EditorRequired] public string EpisodeTitle { get; set; } = "";
     [Parameter] public string? CurrentMediaId { get; set; }
@@ -103,49 +144,61 @@
 
     private string _query = "";
     private IReadOnlyList<IconCandidate> _suggested = [];
-    private string? Selected => CurrentMediaId is Episode.PodcastDefaultIcon or Episode.NoIcon ? null : CurrentMediaId ?? AutoMatch?.Icon.MediaId;
+    private IconIndex _index = default!;
+    private bool _yotoIcons, _busy;
+    private string? _error;
+
+    /// <summary>The hand-picked icon, if any (automatic is shown on its own in Suggested).</summary>
+    private string? Selected => CurrentMediaId is Episode.PodcastDefaultIcon or Episode.NoIcon ? null : CurrentMediaId;
 
     protected override void OnInitialized()
     {
-        // Suggestions: the current/automatic icon, then the best matches for each emoji in the title.
+        _index = YotoIcons.Extend(Index);
+
+        // Suggestions (after the automatic match, which has its own cell): the hand-picked icon, then the best matches
+        // for each emoji in the title.
         var list = new List<IconCandidate>();
-        if (CurrentMediaId is not null && Index.Find(CurrentMediaId) is { } current) list.Add(current);
-        if (AutoMatch is not null) list.Add(AutoMatch.Icon);
+        if (Selected is not null && _index.Find(Selected) is { } current) list.Add(current);
         foreach (var cp in IconMatcher.Emojis(EpisodeTitle))
         {
             var words = IconMatcher.Keywords(cp);
-            if (words.Count > 0) list.AddRange(Index.Search(string.Join(" ", words.Take(1)), 6));
+            if (words.Count > 0) list.AddRange(_index.Search(string.Join(" ", words.Take(1)), 6));
         }
-        _suggested = list.DistinctBy(i => i.MediaId).Take(18).ToList();
+        _suggested = list.DistinctBy(i => i.MediaId).Where(i => i.MediaId != AutoMatch?.Icon.MediaId).Take(12).ToList();
     }
 
     private RenderFragment Grid(IReadOnlyList<IconCandidate> icons) => __builder =>
     {
-        <div class="icon-grid">
-            @foreach (var icon in icons)
-            {
-                <button @key="icon.MediaId" class="icon-cell @(icon.MediaId == Selected ? "on" : "")" title="@IconTitle(icon)"
-                        @onclick="() => OnPick.InvokeAsync(icon.MediaId)">
-                    <img class="icon16 x2" src="@icon.Url" alt="" loading="lazy" />
-                    <span>@icon.Title</span>
-                </button>
-            }
-        </div>
+        <IconGrid Icons="icons" SelectedMediaId="@Selected" OnPick="PickAsync" />
     };
+
+    /// <summary>yotoicons.com icons are uploaded to the Yoto account the first time they're picked.</summary>
+    private async Task PickAsync(IconCandidate icon)
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            icon = await YotoIcons.EnsureOnYotoAsync(icon);
+        }
+        catch (Exception ex)
+        {
+            _error = ex is PodcastToYoto.Yoto.YotoApiException { StatusCode: 403 }
+                ? "Yoto refused the upload (needs the user:icons:manage scope). Reconnect Yoto on the dashboard."
+                : $"Couldn't upload that icon to Yoto: {ex.Message}";
+            return;
+        }
+        finally
+        {
+            _busy = false;
+        }
+        await OnPick.InvokeAsync(icon.MediaId);
+    }
 
     private RenderFragment Shown(ShownIcon icon) => __builder =>
     {
         @if (icon.Url is { } url) { <img class="icon16" src="@url" alt="" /> }
         <span>@icon.Title</span>
     };
-
-    private RenderFragment UseAutomatic() => __builder =>
-    {
-        <button @onclick="() => OnPick.InvokeAsync(null)">
-            Use automatic@(AutoMatch is null ? " (none)" : $": {AutoMatch.Icon.Title}")
-        </button>
-    };
-
-    private static string IconTitle(IconCandidate i) =>
-        i.Tags.Count == 0 ? i.Title : $"{i.Title} ({string.Join(", ", i.Tags)})";
 }

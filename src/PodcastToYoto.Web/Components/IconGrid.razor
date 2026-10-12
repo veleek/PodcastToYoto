@@ -1,0 +1,27 @@
+@using PodcastToYoto.Web.Icons
+
+@* A grid of pickable icons. Icons from elsewhere (e.g. yotoicons.com) get a small badge and say where they're from. *@
+<div class="icon-grid">
+    @foreach (var icon in Icons)
+    {
+        <button @key="icon.MediaId" class="icon-cell @(icon.MediaId == SelectedMediaId ? "on" : "")" title="@Tooltip(icon)"
+                @onclick="() => OnPick.InvokeAsync(icon)">
+            <img class="icon16 x2" src="@icon.Url" alt="" loading="lazy" />
+            <span class="icon-label">@(string.IsNullOrEmpty(icon.Title) ? "Custom icon" : icon.Title)</span>
+            @if (icon.Credit is not null) { <span class="icon-badge" aria-hidden="true">yi</span> }
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<IconCandidate> Icons { get; set; } = [];
+    [Parameter] public string? SelectedMediaId { get; set; }
+    [Parameter] public EventCallback<IconCandidate> OnPick { get; set; }
+
+    private static string Tooltip(IconCandidate i)
+    {
+        var title = string.IsNullOrEmpty(i.Title) ? "Custom icon" : i.Title;
+        var tip = i.Tags.Count == 0 ? title : $"{title} ({string.Join(", ", i.Tags)})";
+        return i.Credit is null ? tip : $"{tip}\n{i.Credit}";
+    }
+}

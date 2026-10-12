@@ -13,7 +13,7 @@
 }
 else
 {
-    <h1 style="font-size:1.2rem">Add a podcast to <a href="/playlists/@PlaylistId">@_playlist.Name</a></h1>
+    <div class="row page-head"><h1>Add podcast</h1><span class="muted">to <a class="cardlink" href="/playlists/@PlaylistId">@_playlist.Name</a></span></div>
 
     <FeedChooser Heading="1. Podcast" Exclude="_existing" OnPreviewed="OnPreviewed" />
 

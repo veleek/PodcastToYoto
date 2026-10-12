@@ -1,0 +1,130 @@
+@inject YotoAccountService Account
+@inject NavigationManager Nav
+
+@* The Yoto login: status, granted scopes, test / reconnect / disconnect. Lives on the settings page. *@
+<section class="card" id="yoto">
+    <h2>Yoto account</h2>
+    @if (_status is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <div class="row">
+            @switch (_status.Status)
+            {
+                case AccountStatus.Connected:
+                    <span class="badge ok">Connected</span>
+                    break;
+                case AccountStatus.NeedsReauth:
+                    <span class="badge err">Needs re-login</span>
+                    break;
+                default:
+                    <span class="badge none">Not connected</span>
+                    break;
+            }
+            @if (_status.Status != AccountStatus.Disconnected)
+            {
+                @* Only shown on narrow screens; on desktop the details are always visible. *@
+                <button class="link-btn narrow-toggle" @onclick="() => _showAccountDetails = !_showAccountDetails"
+                        aria-expanded="@(_showAccountDetails ? "true" : "false")">
+                    @(_showAccountDetails ? "Hide details ▴" : "Details ▾")
+                </button>
+            }
+        </div>
+
+        @if (_status.MissingScopes.Count > 0)
+        {
+            <div class="alert" style="margin-top:.75rem">
+                Missing permission(s): @foreach (var sc in _status.MissingScopes) { <span class="badge err scope">@sc</span> } Click <strong>Reconnect</strong> to grant them.
+            </div>
+        }
+
+        @if (_status.Status != AccountStatus.Disconnected)
+        {
+            <dl class="kv collapsible @(_showAccountDetails ? "" : "collapsed")">
+                <dt>Connected</dt><dd>@Format.Local(_status.ConnectedAt)</dd>
+                <dt>Access token expires</dt><dd>@Format.Local(_status.ExpiresAt)</dd>
+                <dt>Scopes</dt>
+                <dd class="pills">
+                    @foreach (var sc in (_status.Scope ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        <span class="badge none scope">@sc</span>
+                    }
+                </dd>
+                @if (!string.IsNullOrEmpty(_status.LastError))
+                {
+                    <dt>Last error</dt><dd>@_status.LastError</dd>
+                }
+            </dl>
+        }
+
+        <div class="row actions">
+            @if (_status.Status == AccountStatus.Connected)
+            {
+                <button @onclick="TestAsync" disabled="@_busy">Test</button>
+                <button @onclick="Connect" disabled="@_busy">Reconnect</button>
+                <button @onclick="DisconnectAsync" disabled="@_busy">Disconnect</button>
+            }
+            else
+            {
+                <button class="primary" @onclick="Connect">Connect Yoto account</button>
+            }
+        </div>
+
+        @if (_test is not null)
+        {
+            <p class="@(_test.Ok ? "" : "alert")" style="margin-top:.75rem">@_test.Message</p>
+            @if (_test.Playlists.Count > 0)
+            {
+                <ul class="plain">
+                    @foreach (var p in _test.Playlists.OrderByDescending(p => p.UpdatedAt))
+                    {
+                        <li><CardLink CardId="@p.CardId" Title="@p.Title" /> <span class="muted">— updated @Format.Local(p.UpdatedAt)</span></li>
+                    }
+                </ul>
+            }
+        }
+    }
+</section>
+
+@code {
+    private YotoAccountStatus? _status;
+    private YotoConnectionTest? _test;
+    private bool _busy;
+    private bool _showAccountDetails;
+
+    protected override async Task OnInitializedAsync() => _status = await Account.GetStatusAsync();
+
+    // Full page load: /auth/login is a server endpoint, not a Blazor route.
+    private void Connect() => Nav.NavigateTo("/auth/login", forceLoad: true);
+
+    private async Task TestAsync()
+    {
+        _busy = true;
+        try
+        {
+            _test = await Account.TestConnectionAsync();
+            _status = await Account.GetStatusAsync(); // refresh may have rotated tokens / flagged re-auth
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DisconnectAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Account.DisconnectAsync();
+            _test = null;
+            _status = await Account.GetStatusAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
