@@ -134,7 +134,10 @@ else
     <section class="card">
         <div class="row card-head">
             <h2>Podcasts</h2>
-            <a class="button" href="/playlists/@Id/podcasts/new">Add podcast</a>
+            <div class="row">
+                <a class="button" href="/playlists/@Id/podcasts/new">Add podcast</a>
+                <a class="button" href="/playlists/@Id/yoto/new" title="Reuse tracks from one of your Yoto playlists">Add from Yoto playlist</a>
+            </div>
         </div>
         @if (_playlist.Subscriptions.Count == 0)
         {
@@ -144,7 +147,7 @@ else
         {
             @if (_playlist.Subscriptions.Count > 1)
             {
-                <p class="muted">Order is the podcasts' preference order, and the group order when tracks are grouped by podcast.</p>
+                <p class="muted">Order is the podcasts' preference order, and the group order when tracks are grouped by podcast (or the turn order when interleaved).</p>
             }
             <div class="subs">
                 @foreach (var (s, index) in _playlist.Subscriptions.Select((s, i) => (s, i)))
@@ -158,8 +161,17 @@ else
                         <div class="grow">
                             <div><a class="stretch" href="/playlists/@Id/podcasts/@s.Id"><strong>@s.Name</strong></a></div>
                             <div class="muted">
-                                @_plannedPer.GetValueOrDefault(s.Id) on playlist · @s.Episodes.Count episodes · @s.Episodes.Count(e => e.IsFavourite) favourites
-                                · newest @s.RecentCount, max @s.MaxTracks · checked @Format.Ago(s.LastPolledAt, Time.GetUtcNow())
+                                @if (s.IsYotoPlaylist)
+                                {
+                                    var week = _plan?.Rotations.FirstOrDefault(r => r.Source.Id == s.Id);
+                                    <span>Yoto playlist · @_plannedPer.GetValueOrDefault(s.Id) on playlist · @(week is not null ? $"{s.RecentCount} rotating weekly + " : s.RecentCount > 0 ? $"first {s.RecentCount} + " : "")@s.Episodes.Count(e => e.IsFavourite) favourites of @s.Episodes.Count tracks
+                                    · max @s.MaxTracks@(week is not null ? $" · {Format.NextRotation(week, Time.GetUtcNow())}" : "") · checked @Format.Ago(s.LastPolledAt, Time.GetUtcNow())</span>
+                                }
+                                else
+                                {
+                                    <span>@_plannedPer.GetValueOrDefault(s.Id) on playlist · @s.Episodes.Count episodes · @s.Episodes.Count(e => e.IsFavourite) favourites
+                                    · newest @s.RecentCount, max @s.MaxTracks · checked @Format.Ago(s.LastPolledAt, Time.GetUtcNow())</span>
+                                }
                             </div>
                         </div>
                         @if (s.LogoIconMediaId is not null && s.LogoIcon != LogoIconMode.Off && s.LogoIconUrl is not null)
@@ -167,7 +179,7 @@ else
                             <div class="sub-icons"><img class="icon16 x2" src="@s.LogoIconUrl" title="Logo icon (@(s.LogoIcon == LogoIconMode.Always ? "every episode" : "fallback"))" alt="" /></div>
                         }
                         @if (!s.Enabled) { <span class="badge none">Not included</span> }
-                        else if (s.LastError is not null) { <span class="badge err" title="@s.LastError">Feed error</span> }
+                        else if (s.LastError is not null) { <span class="badge err" title="@s.LastError">@(s.IsYotoPlaylist ? "Read error" : "Feed error")</span> }
                         @if (_playlist.Subscriptions.Count > 1)
                         {
                             @* setData: Firefox only starts a drag once something is set. Arrow keys move it without a mouse. *@
@@ -189,8 +201,8 @@ else
         </div>
         <p class="muted">
             What the next sync publishes, in order.
-            @foreach (var w in _plan!.Warnings) { <span class="err-text"> @w</span> }
-            @if (_iconIndex is null && Icons.LastError is not null) { <span class="err-text"> @Icons.LastError</span> }
+            @foreach (var w in _plan!.Warnings) { <span class="err-text">@(" " + w)</span> }
+            @if (_iconIndex is null && Icons.LastError is not null) { <span class="err-text">@(" " + Icons.LastError)</span> }
         </p>
         <div class="table-wrap">
         <table class="eps">
@@ -229,7 +241,7 @@ else
                         <td class="title">
                             @e.Title
                             @if (e.EpisodeType is "bonus" or "trailer") { <span class="badge after none">@e.EpisodeType</span> }
-                            @if (e.MissingFromFeedSince is not null) { <span class="badge after warn" title="Since @Format.Local(e.MissingFromFeedSince)">not in feed</span> }
+                            @if (e.MissingFromFeedSince is not null) { <span class="badge after warn" title="Since @Format.Local(e.MissingFromFeedSince)">@(podcast.IsYotoPlaylist ? "removed from source" : "not in feed")</span> }
                             <div class="narrow-only muted meta"><div class="meta-row">@if (_multi) { <span class="one-line">@podcast.Name</span> }<span class="nowrap">@(_multi ? "\u00a0· " : "")@Format.Date(e.PublishedAt) · @Format.Duration(e.DurationSeconds)@if (e.AudioId is not null) { <span title="Uploaded to Yoto"> · ☁️</span> }</span></div></div>
                         </td>
                         <td class="num wide-only">@Format.Duration(e.DurationSeconds)</td>
@@ -339,7 +351,7 @@ else
 
     private void Replan()
     {
-        _plan = PlaylistPlanner.Plan(_playlist!, _playlist!.Subscriptions);
+        _plan = PlaylistPlanner.Plan(_playlist!, _playlist!.Subscriptions, Time.GetUtcNow());
         _plannedPer = _plan.Episodes.GroupBy(e => e.SubscriptionId).ToDictionary(g => g.Key, g => g.Count());
         _multi = _plannedPer.Count > 1 || _playlist.Subscriptions.Count(s => s.Enabled) > 1;
     }
@@ -357,7 +369,7 @@ else
     }
 
     private static string OrderText(Playlist p) =>
-        Format.Order(p.Order) + (p.GroupByPodcast ? ", grouped by podcast" : "");
+        Format.Order(p.Order) + (p.GroupByPodcast && p.Order != PlaylistOrder.Interleaved ? ", grouped by podcast" : "");
 
     private void SyncNow()
     {

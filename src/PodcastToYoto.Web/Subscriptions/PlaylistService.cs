@@ -76,7 +76,8 @@ public sealed class PlaylistService(
         foreach (var s in p.Subscriptions)
         {
             s.Playlist = p;
-            s.Episodes.Sort((a, b) => Nullable.Compare(b.PublishedAt, a.PublishedAt));
+            if (s.IsYotoPlaylist) s.Episodes.Sort((a, b) => Nullable.Compare(a.SourceIndex, b.SourceIndex) is var c and not 0 ? c : a.Id.CompareTo(b.Id));
+            else s.Episodes.Sort((a, b) => Nullable.Compare(b.PublishedAt, a.PublishedAt));
         }
         return p;
     }

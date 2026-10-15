@@ -22,6 +22,7 @@
                 <option value="@PlaylistOrder.OldestFirst">Oldest first</option>
                 <option value="@PlaylistOrder.TitleAscending">Alphabetically A–Z</option>
                 <option value="@PlaylistOrder.TitleDescending">Alphabetically Z–A</option>
+                <option value="@PlaylistOrder.Interleaved">Interleaved (one from each source in turn)</option>
             </InputSelect>
         </label>
 
@@ -38,7 +39,14 @@
         </label>
     </div>
 
-    <label class="check"><InputCheckbox @bind-Value="Model.GroupByPodcast" /> Group by podcast</label>
+    @if (Model.Order == PlaylistOrder.Interleaved)
+    {
+        <label class="check muted"><input type="checkbox" disabled /> Group by podcast · not used when interleaved</label>
+    }
+    else
+    {
+        <label class="check"><InputCheckbox @bind-Value="Model.GroupByPodcast" /> Group by podcast</label>
+    }
 
     @if (LockEnabled)
     {

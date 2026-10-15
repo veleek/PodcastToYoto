@@ -1,12 +1,24 @@
 namespace PodcastToYoto.Web.Data;
 
 public enum AccountStatus { Disconnected, Connected, NeedsReauth }
-/// <summary>Track order: by release date, or by title (ignoring leading emoji and punctuation, numbers in numeric order).</summary>
-public enum PlaylistOrder { NewestFirst, OldestFirst, TitleAscending, TitleDescending }
+/// <summary>
+/// Track order: by release date, or by title (ignoring leading emoji and punctuation, numbers in numeric order).
+/// <see cref="Interleaved"/> is for playlists only: one track from each source in turn, each source in its own order.
+/// </summary>
+public enum PlaylistOrder { NewestFirst, OldestFirst, TitleAscending, TitleDescending, Interleaved }
 
 /// <summary>When a podcast's own logo icon (generated from its artwork and uploaded to Yoto) is shown on the player.</summary>
 public enum LogoIconMode { Off, Fallback, Always }
 public enum SyncTrigger { Schedule, Manual, Startup }
+
+/// <summary>Where a <see cref="Subscription"/>'s tracks come from: a podcast feed, or an existing Yoto (MYO) playlist.</summary>
+public enum SourceKind { Podcast, YotoPlaylist }
+
+/// <summary>
+/// How a Yoto playlist source picks its non-favourite tracks: the first <see cref="Subscription.RecentCount"/> in its order,
+/// or a weekly rotation through the whole source (<see cref="Subscription.RotationNumber"/>).
+/// </summary>
+public enum TrackSelection { First, RotateWeekly }
 public enum SyncResult { Running, NoChange, Updated, Failed, DryRun }
 
 /// <summary>The single connected Yoto account (Id is always 1).</summary>
@@ -47,7 +59,10 @@ public sealed class Playlist
     /// <summary>Cap on tracks across all podcasts (Yoto's limit is 100).</summary>
     public int MaxTracks { get; set; } = 100;
 
-    /// <summary>Release-date order of the tracks (within each podcast when <see cref="GroupByPodcast"/>).</summary>
+    /// <summary>
+    /// Release-date order of the tracks (within each podcast when <see cref="GroupByPodcast"/>), or
+    /// <see cref="PlaylistOrder.Interleaved"/>, which ignores <see cref="GroupByPodcast"/>.
+    /// </summary>
     public PlaylistOrder Order { get; set; } = PlaylistOrder.NewestFirst;
 
     /// <summary>Keep each podcast's tracks together, podcasts in <see cref="Subscription.Position"/> order.</summary>
@@ -80,10 +95,19 @@ public sealed class Playlist
         .FirstOrDefault();
 }
 
-/// <summary>One podcast feed feeding a <see cref="Playlist"/>, with its own episode selection rules.</summary>
+/// <summary>
+/// One source feeding a <see cref="Playlist"/>, with its own episode selection rules: a podcast feed, or an existing Yoto
+/// playlist whose tracks are reused (<see cref="Kind"/>).
+/// </summary>
 public sealed class Subscription
 {
     public int Id { get; set; }
+
+    public SourceKind Kind { get; set; } = SourceKind.Podcast;
+    public bool IsYotoPlaylist => Kind == SourceKind.YotoPlaylist;
+
+    /// <summary>The Yoto playlist the tracks are read from (<see cref="SourceKind.YotoPlaylist"/> only).</summary>
+    public string? SourceCardId { get; set; }
     public int PlaylistId { get; set; }
     public Playlist? Playlist { get; set; }
 
@@ -96,6 +120,10 @@ public sealed class Subscription
     /// <summary>Included in the playlist. Excluded podcasts aren't polled or published.</summary>
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// Podcasts: the newest N episodes. Yoto playlist sources: the first N tracks in <see cref="Order"/>. Both on top of
+    /// the favourites (picked tracks).
+    /// </summary>
     public int RecentCount { get; set; } = 25;
 
     /// <summary>Most episodes this podcast contributes (recent + favourites).</summary>
@@ -103,11 +131,22 @@ public sealed class Subscription
 
     /// <summary>
     /// This podcast's own episode order, used when the playlist groups by podcast and <see cref="UseOwnOrder"/> is set;
-    /// otherwise the playlist's order applies.
+    /// otherwise the playlist's order applies. Yoto playlist sources always use their own order (the date orders mean the
+    /// source playlist's track order, and its reverse); it also decides which tracks are the first <see cref="RecentCount"/>.
     /// </summary>
     public PlaylistOrder Order { get; set; } = PlaylistOrder.NewestFirst;
 
     public bool UseOwnOrder { get; set; }
+
+    /// <summary>Yoto playlist sources: first N, or a weekly rotation of N (see <see cref="Sync.TrackRotation"/>).</summary>
+    public TrackSelection Selection { get; set; } = TrackSelection.First;
+
+    /// <summary>The current rotation (0 = none yet); its tracks have this <see cref="Episode.RotationNumber"/>.</summary>
+    public int RotationNumber { get; set; }
+
+    /// <summary>When the current rotation's week began; null = rotate on the next sync.</summary>
+    public DateTimeOffset? RotationStartedAt { get; set; }
+
     public bool IncludeTrailers { get; set; }
 
     /// <summary>
@@ -167,6 +206,15 @@ public sealed class Episode
     public const string NoIcon = "none";
     public DateTimeOffset FirstSeenAt { get; set; }
     public DateTimeOffset? MissingFromFeedSince { get; set; }
+
+    /// <summary>Position in the source Yoto playlist (Yoto playlist sources only).</summary>
+    public int? SourceIndex { get; set; }
+
+    /// <summary>The icon the track has in its source Yoto playlist ("yoto:#…"); its default icon here.</summary>
+    public string? SourceIconRef { get; set; }
+
+    /// <summary>The last rotation that put this track on the playlist (<see cref="Subscription.RotationNumber"/>); null = never.</summary>
+    public int? RotationNumber { get; set; }
 
     public int? AudioId { get; set; }
     public Audio? Audio { get; set; }

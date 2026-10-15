@@ -23,6 +23,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         builder.Properties<LogoIconMode>().HaveConversion<string>();
         builder.Properties<SyncTrigger>().HaveConversion<string>();
         builder.Properties<SyncResult>().HaveConversion<string>();
+        builder.Properties<SourceKind>().HaveConversion<string>();
+        builder.Properties<TrackSelection>().HaveConversion<string>();
     }
 
     protected override void OnModelCreating(ModelBuilder b)

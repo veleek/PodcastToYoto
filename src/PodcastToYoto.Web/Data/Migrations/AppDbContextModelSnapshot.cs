@@ -15,7 +15,7 @@ namespace PodcastToYoto.Web.Data.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
 
             modelBuilder.Entity("PodcastToYoto.Web.Data.Audio", b =>
                 {
@@ -96,6 +96,15 @@ namespace PodcastToYoto.Web.Data.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<long?>("PublishedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RotationNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SourceIconRef")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("SourceIndex")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("SubscriptionId")
@@ -203,6 +212,10 @@ namespace PodcastToYoto.Web.Data.Migrations
                     b.Property<bool>("IncludeTrailers")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("LastError")
                         .HasColumnType("TEXT");
 
@@ -238,6 +251,19 @@ namespace PodcastToYoto.Web.Data.Migrations
 
                     b.Property<int>("RecentCount")
                         .HasColumnType("INTEGER");
+
+                    b.Property<int>("RotationNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("RotationStartedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Selection")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceCardId")
+                        .HasColumnType("TEXT");
 
                     b.Property<bool>("UseDefaultIcon")
                         .HasColumnType("INTEGER");

@@ -20,6 +20,16 @@ public sealed class AudioPipeline(EpisodeDownloader downloader, YotoAudioUploade
             return episode.Audio;
         }
 
+        // A track from a Yoto playlist source: its audio is already on Yoto (normally linked when the source is read).
+        if (episode.EnclosureUrl.StartsWith(YotoCardReader.RefPrefix, StringComparison.Ordinal))
+        {
+            var sha = episode.EnclosureUrl[YotoCardReader.RefPrefix.Length..];
+            episode.Audio = await Subscriptions.YotoAudioRefs.FindOrAddAsync(db, sha, episode.DurationSeconds, episode.EnclosureLength,
+                null, null, time.GetUtcNow(), ct);
+            await db.SaveChangesAsync(ct);
+            return episode.Audio;
+        }
+
         var sw = Stopwatch.StartNew();
         using var file = await downloader.DownloadAsync(episode.EnclosureUrl, ct);
         var downloaded = sw.Elapsed;

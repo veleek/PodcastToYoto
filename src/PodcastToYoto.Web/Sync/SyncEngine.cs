@@ -143,7 +143,7 @@ public sealed class SyncEngine(
         var failedPolls = 0;
         foreach (var (podcastId, name) in podcastIds)
         {
-            activity.Set(id, podcastIds.Count > 1 ? $"Checking feed: {name}…" : "Checking feed…");
+            activity.Set(id, podcastIds.Count > 1 ? $"Checking: {name}…" : "Checking feed…");
             var poll = await subscriptions.PollAsync(podcastId, ct);
             if (!poll.Ok)
             {
@@ -161,13 +161,20 @@ public sealed class SyncEngine(
             .SingleAsync(x => x.Id == id, ct);
 
         // 2. Plan
-        var plan = PlaylistPlanner.Plan(p, p.Subscriptions);
+        var plan = PlaylistPlanner.Plan(p, p.Subscriptions, time.GetUtcNow());
 
         if (dryRun)
         {
             var missing = plan.Episodes.Count(e => e.AudioId is null);
             return new SyncOutcome(SyncResult.DryRun,
                 $"Dry run: {plan.Episodes.Count} episodes planned, {missing} would be uploaded. {string.Join(" ", plan.Warnings.Concat(notes))}".Trim(), plan);
+        }
+
+        // A new week's rotation is kept even if publishing fails, so the next sync retries the same tracks.
+        if (plan.Rotations.Any(r => r.IsNew))
+        {
+            TrackRotation.Record(plan.Rotations, plan.Episodes);
+            await db.SaveChangesAsync(ct);
         }
 
         // 3. Audio
@@ -254,7 +261,7 @@ public sealed class SyncEngine(
     }
 
     /// <summary>
-    /// The icon for an episode: hand-picked always wins; then the podcast's logo icon if it's set to "always"; then emoji
+    /// The icon for an episode: hand-picked always wins; then a Yoto playlist track's icon from its source; then the podcast's logo icon if it's set to "always"; then emoji
     /// matching (unless turned off for the podcast); then the logo icon if it's the fallback; else the player's default.
     /// </summary>
     public static string? IconFor(Episode e, Subscription podcast, IconIndex? icons)
@@ -263,6 +270,7 @@ public sealed class SyncEngine(
         if (e.IconMediaId == Episode.PodcastDefaultIcon) return logo;
         if (e.IconMediaId == Episode.NoIcon) return null;
         if (e.IconMediaId is { } chosen) return $"yoto:#{chosen}";
+        if (e.SourceIconRef is { } source) return source;
         if (logo is not null && podcast.LogoIcon == LogoIconMode.Always) return logo;
 
         var matched = podcast.UseDefaultIcon || icons is null ? null : IconMatcher.Match(e.Title, icons)?.Icon.Ref;

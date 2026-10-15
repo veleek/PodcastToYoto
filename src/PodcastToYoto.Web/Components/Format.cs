@@ -29,6 +29,11 @@ public static class Format
             : $"in {(int)d.TotalDays} days";
     }
 
+    /// <summary>When a weekly rotation next picks new tracks: "new tracks Mon 20 Oct 07:00 (in 6 days)".</summary>
+    public static string NextRotation(PodcastToYoto.Web.Sync.TrackRotation.Week week, DateTimeOffset now) =>
+        week.IsNew ? "new tracks picked on the next sync"
+        : $"new tracks {Local(week.NextChangeAt, "ddd d MMM HH:mm")} ({Until(week.NextChangeAt, now)})";
+
     /// <summary>"NoChange" → "No change", "DryRun" → "Dry run".</summary>
     public static string Words(Enum value)
     {
@@ -55,11 +60,21 @@ public static class Format
             : $"{(int)d.TotalDays} days ago";
     }
 
+    /// <summary>A Yoto playlist source's order: the date orders mean its track order.</summary>
+    public static string TrackOrder(PodcastToYoto.Web.Data.PlaylistOrder order) => order switch
+    {
+        PodcastToYoto.Web.Data.PlaylistOrder.OldestFirst => "reverse track order",
+        PodcastToYoto.Web.Data.PlaylistOrder.TitleAscending => "A–Z order",
+        PodcastToYoto.Web.Data.PlaylistOrder.TitleDescending => "Z–A order",
+        _ => "track order",
+    };
+
     public static string Order(PodcastToYoto.Web.Data.PlaylistOrder order) => order switch
     {
         PodcastToYoto.Web.Data.PlaylistOrder.OldestFirst => "oldest first",
         PodcastToYoto.Web.Data.PlaylistOrder.TitleAscending => "A–Z",
         PodcastToYoto.Web.Data.PlaylistOrder.TitleDescending => "Z–A",
+        PodcastToYoto.Web.Data.PlaylistOrder.Interleaved => "one from each source in turn",
         _ => "newest first",
     };
 }

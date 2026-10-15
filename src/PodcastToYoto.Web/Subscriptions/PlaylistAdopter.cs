@@ -39,7 +39,7 @@ public sealed class PlaylistAdopter(
             .SingleAsync(x => x.Id == playlistId, ct);
 
         using var doc = await yoto.GetContentAsync(cardId, ct);
-        var card = doc.RootElement.TryGetProperty("card", out var c) ? c : doc.RootElement;
+        var card = YotoCardReader.Card(doc);
 
         s.YotoCardId = cardId;
         s.LastPublishedHash = null; // force a publish on next sync
@@ -69,7 +69,7 @@ public sealed class PlaylistAdopter(
         int tracks = 0, matched = 0, newFavs = 0, reused = 0;
         var unmatched = new List<string>();
 
-        foreach (var track in EnumerateTracks(card))
+        foreach (var track in YotoCardReader.Tracks(card))
         {
             tracks++;
             var ep = TrackMatcher.Match(track.Title, candidates);
@@ -88,19 +88,8 @@ public sealed class PlaylistAdopter(
 
             if (ep.AudioId is null && ep.Audio is null && track.Sha is not null)
             {
-                ep.Audio = await db.Audio.SingleOrDefaultAsync(a => a.TranscodedSha256 == track.Sha, ct)
-                    ?? db.Audio.Local.SingleOrDefault(a => a.TranscodedSha256 == track.Sha)
-                    ?? db.Audio.Add(new Audio
-                    {
-                        // Source file unknown (uploaded outside this app); key it by the transcoded hash instead.
-                        SourceSha256 = $"yoto:{track.Sha}",
-                        TranscodedSha256 = track.Sha,
-                        DurationSeconds = track.Duration,
-                        FileSize = track.FileSize,
-                        ChannelsJson = track.ChannelsJson,
-                        FormatJson = track.FormatJson,
-                        UploadedAt = time.GetUtcNow(),
-                    }).Entity;
+                ep.Audio = await YotoAudioRefs.FindOrAddAsync(db, track.Sha, track.Duration, track.FileSize,
+                    track.ChannelsJson, track.FormatJson, time.GetUtcNow(), ct);
                 reused++;
             }
         }
@@ -108,37 +97,6 @@ public sealed class PlaylistAdopter(
         return new AdoptResult(keepAsFavourites, tracks, matched, newFavs, reused, unmatched);
     }
 
-    private sealed record ExistingTrack(string? Title, string? Sha, long? Duration, long? FileSize, string? ChannelsJson, string? FormatJson);
-
-    private static IEnumerable<ExistingTrack> EnumerateTracks(JsonElement card)
-    {
-        if (!card.TryGetProperty("content", out var content) || !content.TryGetProperty("chapters", out var chapters)
-            || chapters.ValueKind != JsonValueKind.Array)
-            yield break;
-
-        foreach (var ch in chapters.EnumerateArray())
-        {
-            var chapterTitle = Str(ch, "title");
-            if (!ch.TryGetProperty("tracks", out var tracks) || tracks.ValueKind != JsonValueKind.Array) continue;
-
-            foreach (var t in tracks.EnumerateArray())
-            {
-                var url = Str(t, "trackUrl");
-                var sha = url is not null && url.StartsWith("yoto:#", StringComparison.Ordinal) ? url["yoto:#".Length..] : null;
-                yield return new ExistingTrack(
-                    Str(t, "title") ?? chapterTitle,
-                    sha,
-                    Num(t, "duration"),
-                    Num(t, "fileSize"),
-                    t.TryGetProperty("channels", out var chn) ? chn.GetRawText() : null,
-                    t.TryGetProperty("format", out var fmt) ? fmt.GetRawText() : null);
-            }
-        }
-    }
-
     private static string? Str(JsonElement e, string name) =>
         e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
-
-    private static long? Num(JsonElement e, string name) =>
-        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? (long)Math.Round(v.GetDouble()) : null;
 }

@@ -35,6 +35,13 @@ public static class EpisodeIcons
             return new ShownIcon(picked?.Url, picked?.Title ?? id, $"{picked?.Title ?? id} (picked by hand)");
         }
 
+        if (e.SourceIconRef is { } source)
+        {
+            var sourceId = source.StartsWith("yoto:#", StringComparison.Ordinal) ? source["yoto:#".Length..] : source;
+            var icon = index?.Find(sourceId);
+            return new ShownIcon(icon?.Url, icon?.Title ?? "Source icon", $"{icon?.Title ?? "Icon"} (from the Yoto playlist)");
+        }
+
         var logo = podcast.LogoIconMediaId is not null && podcast.LogoIcon != LogoIconMode.Off;
         if (logo && podcast.LogoIcon == LogoIconMode.Always)
             return new ShownIcon(podcast.LogoIconUrl, "Podcast logo", "Podcast logo (used on every episode)");

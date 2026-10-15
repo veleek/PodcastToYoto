@@ -7,6 +7,33 @@ namespace PodcastToYoto.Web.Subscriptions;
 /// <summary>Editable settings of one podcast within a playlist (form model).</summary>
 public sealed class SubscriptionSettings
 {
+    /// <summary>Podcast feed, or an existing Yoto playlist (see <see cref="ForYotoPlaylist"/>). Not editable.</summary>
+    public SourceKind Kind { get; set; } = SourceKind.Podcast;
+
+    /// <summary>The source Yoto playlist (<see cref="SourceKind.YotoPlaylist"/> only).</summary>
+    public string? SourceCardId { get; set; }
+
+    [JsonIgnore]
+    public bool IsYotoPlaylist => Kind == SourceKind.YotoPlaylist;
+
+    /// <summary>
+    /// Settings for a Yoto playlist source. <see cref="FeedUrl"/> is the playlist's page in the Yoto app, which keeps it
+    /// unique within a playlist (import matches sources by it).
+    /// </summary>
+    public static SubscriptionSettings ForYotoPlaylist(string cardId, string name) => new()
+    {
+        Kind = SourceKind.YotoPlaylist,
+        SourceCardId = cardId,
+        Name = name,
+        FeedUrl = YotoPlaylistUrl(cardId),
+        RecentCount = 0, // just the picked tracks
+        Order = PlaylistOrder.NewestFirst, // the source playlist's own order
+        UseOwnOrder = true,
+        MatchIcons = false,
+    };
+
+    public static string YotoPlaylistUrl(string cardId) => $"https://my.yotoplay.com/cards/{Uri.EscapeDataString(cardId)}";
+
     [Required, StringLength(200)]
     public string Name { get; set; } = "";
 
@@ -16,11 +43,14 @@ public sealed class SubscriptionSettings
     /// <summary>Included in the playlist.</summary>
     public bool Enabled { get; set; } = true;
 
-    [Range(1, 100, ErrorMessage = "Between 1 and 100.")]
+    [Range(0, 100, ErrorMessage = "Between 0 and 100.")]
     public int RecentCount { get; set; } = 25;
 
     [Range(1, 100, ErrorMessage = "Between 1 and 100 (Yoto's track limit).")]
     public int MaxTracks { get; set; } = 100;
+
+    /// <summary>Yoto playlist sources: the first <see cref="RecentCount"/> tracks, or a weekly rotation of that many.</summary>
+    public TrackSelection Selection { get; set; } = TrackSelection.First;
 
     /// <summary>This podcast's own order when the playlist groups by podcast; only used with <see cref="UseOwnOrder"/>.</summary>
     public PlaylistOrder Order { get; set; } = PlaylistOrder.NewestFirst;
@@ -49,11 +79,14 @@ public sealed class SubscriptionSettings
 
     public static SubscriptionSettings From(Subscription s) => new()
     {
+        Kind = s.Kind,
+        SourceCardId = s.SourceCardId,
         Name = s.Name,
         FeedUrl = s.FeedUrl,
         Enabled = s.Enabled,
         RecentCount = s.RecentCount,
         MaxTracks = s.MaxTracks,
+        Selection = s.Selection,
         Order = s.Order,
         UseOwnOrder = s.UseOwnOrder,
         IncludeTrailers = s.IncludeTrailers,
@@ -63,11 +96,16 @@ public sealed class SubscriptionSettings
 
     public void ApplyTo(Subscription s)
     {
+        s.Kind = Kind;
+        s.SourceCardId = SourceCardId;
         s.Name = Name.Trim();
         s.FeedUrl = FeedUrl.Trim();
         s.Enabled = Enabled;
-        s.RecentCount = RecentCount;
         s.MaxTracks = MaxTracks;
+        // A new rotation size or mode starts a new week on the next sync.
+        if (s.Selection != Selection || s.RecentCount != RecentCount) s.RotationStartedAt = null;
+        s.Selection = Selection;
+        s.RecentCount = RecentCount;
         s.Order = Order;
         s.UseOwnOrder = UseOwnOrder;
         s.IncludeTrailers = IncludeTrailers;

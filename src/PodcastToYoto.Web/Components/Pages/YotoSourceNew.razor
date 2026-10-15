@@ -1,0 +1,210 @@
+@page "/playlists/{PlaylistId:int}/yoto/new"
+@using PodcastToYoto.Web.Icons
+@using PodcastToYoto.Yoto
+@inject PlaylistService Playlists
+@inject SubscriptionService Subscriptions
+@inject YotoAccountService Account
+@inject IconCatalog Icons
+@inject NavigationManager Nav
+@inject SubscriptionNotices Notices
+
+<PageTitle>Add from a Yoto playlist · Podcast → Yoto</PageTitle>
+
+@if (_playlist is null)
+{
+    <p class="muted">@(_notFound ? "Playlist not found." : "Loading…")</p>
+}
+else
+{
+    <div class="row page-head"><h1>Add from a Yoto playlist</h1><span class="muted">to <a class="cardlink" href="/playlists/@PlaylistId">@_playlist.Name</a></span></div>
+
+    <section class="card">
+        <h2>1. Yoto playlist</h2>
+        <p class="muted">Its tracks are reused as they are on Yoto: nothing is downloaded or uploaded again. Each sync re-reads it, so renames carry over; tracks removed from it stay on this playlist.</p>
+        @if (_cardsError is not null)
+        {
+            <div class="alert">Couldn't load Yoto playlists: @_cardsError</div>
+        }
+        else if (_cards is null)
+        {
+            <p class="muted">Loading Yoto playlists…</p>
+        }
+        else if (_cards.Count == 0)
+        {
+            <p class="muted">No other Yoto playlists to add.</p>
+        }
+        else
+        {
+            <div class="picker">
+                @foreach (var c in _cards)
+                {
+                    <label class="pick @(_cardId == c.CardId ? "on" : "")">
+                        <input type="radio" name="source-card" checked="@(_cardId == c.CardId)" disabled="@_busy" @onchange="() => SelectAsync(c)" />
+                        <span class="grow"><CardLink CardId="@c.CardId" Title="@c.Title" /><span class="muted"> · updated @Format.Date(c.UpdatedAt)</span></span>
+                    </label>
+                }
+            </div>
+        }
+    </section>
+
+    @if (_cardId is not null)
+    {
+        <section class="card">
+            <h2>2. Tracks</h2>
+            @if (_tracksError is not null)
+            {
+                <div class="alert">Couldn't read the playlist: @_tracksError</div>
+            }
+            else if (_tracks is null)
+            {
+                <p class="muted">Loading tracks…</p>
+            }
+            else
+            {
+                @* Not a <form>: Enter in the filter box shouldn't add the playlist. *@
+                <div class="form">
+                    <label>Name
+                        <input class="text" @bind="_name" @bind:event="oninput" maxlength="200" />
+                    </label>
+                    <div class="row" style="margin-top:.75rem">
+                        <input class="text filter" placeholder="Filter…" @bind="_filter" @bind:event="oninput" />
+                        <button type="button" @onclick="() => SetAll(true)">Select all</button>
+                        <button type="button" @onclick="() => SetAll(false)">None</button>
+                    </div>
+
+                    <p class="muted">@_picked.Count of @_tracks.Count(t => t.Sha is not null) selected. They're added as favourites (★); you can change them, or take the first N tracks instead, later from its page.</p>
+                    <div class="table-wrap">
+                        <table class="eps">
+                            <thead><tr><th></th><th>#</th><th>Icon</th><th>Title</th><th class="wide-only">Length</th></tr></thead>
+                            <tbody>
+                                @foreach (var t in VisibleTracks)
+                                {
+                                    var guid = t.Sha is null ? null : YotoTrackMerger.GuidFor(t.Sha);
+                                    var icon = IconUrl(t.IconRef);
+                                    <tr @key="t.Index" class="@(guid is not null && _picked.Contains(guid) ? "planned" : "")">
+                                        <td>
+                                            @if (guid is not null)
+                                            {
+                                                <input type="checkbox" checked="@_picked.Contains(guid)" @onchange="e => Toggle(guid, (bool)e.Value!)" />
+                                            }
+                                        </td>
+                                        <td class="num">@(t.Index + 1)</td>
+                                        <td>@if (icon is not null) { <img class="icon16" src="@icon" alt="" /> }</td>
+                                        <td class="title">
+                                            @(t.Title ?? "(untitled)")
+                                            @if (guid is null) { <span class="badge after none" title="Only uploaded audio can be reused">stream, skipped</span> }
+                                        </td>
+                                        <td class="num wide-only">@Format.Duration(t.Duration)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="row" style="margin-top:.75rem">
+                        <button type="button" class="primary" @onclick="AddAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_name) || _picked.Count == 0)">Add to playlist</button>
+                    </div>
+                    @if (_error is not null) { <div class="alert">@_error</div> }
+                </div>
+            }
+        </section>
+    }
+}
+
+@code {
+    [Parameter] public int PlaylistId { get; set; }
+
+    private Playlist? _playlist;
+    private bool _notFound, _busy;
+    private IReadOnlyList<YotoCardSummary>? _cards;
+    private IReadOnlyList<YotoCardTrack>? _tracks;
+    private IconIndex? _icons;
+    private readonly HashSet<string> _picked = new(StringComparer.Ordinal);
+    private string? _cardId, _name, _cardsError, _tracksError, _error;
+    private string _filter = "";
+
+    private IEnumerable<YotoCardTrack> VisibleTracks => _tracks!
+        .Where(t => string.IsNullOrWhiteSpace(_filter) || (t.Title ?? "").Contains(_filter, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _playlist = await Playlists.GetAsync(PlaylistId);
+        _notFound = _playlist is null;
+        if (_playlist is null) return;
+
+        try
+        {
+            // Not the playlist being built, and not one that's already a source of it.
+            var used = _playlist.Subscriptions.Select(s => s.SourceCardId).Append(_playlist.YotoCardId).OfType<string>().ToHashSet();
+            _cards = (await Account.ListPlaylistsAsync()).Where(c => !used.Contains(c.CardId)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _cardsError = ex.Message;
+        }
+
+        try
+        {
+            _icons = await Icons.GetAsync();
+        }
+        catch (YotoAuthException)
+        {
+            // Icons are only decoration here.
+        }
+    }
+
+    private async Task SelectAsync(YotoCardSummary card)
+    {
+        _cardId = card.CardId;
+        _name = card.Title;
+        _tracks = null;
+        _tracksError = null;
+        _picked.Clear();
+        try
+        {
+            var (title, tracks) = await Subscriptions.PreviewYotoPlaylistAsync(card.CardId);
+            _name = title ?? card.Title ?? card.CardId;
+            _tracks = tracks;
+        }
+        catch (Exception ex)
+        {
+            _tracksError = ex.Message;
+        }
+    }
+
+    private void Toggle(string guid, bool on)
+    {
+        if (on) _picked.Add(guid);
+        else _picked.Remove(guid);
+    }
+
+    private void SetAll(bool on)
+    {
+        foreach (var t in VisibleTracks.Where(t => t.Sha is not null))
+            Toggle(YotoTrackMerger.GuidFor(t.Sha!), on);
+    }
+
+    private string? IconUrl(string? iconRef) =>
+        iconRef is not null && iconRef.StartsWith(YotoCardReader.RefPrefix, StringComparison.Ordinal)
+            ? _icons?.Find(iconRef[YotoCardReader.RefPrefix.Length..])?.Url
+            : null;
+
+    private async Task AddAsync()
+    {
+        if (_cardId is null || string.IsNullOrWhiteSpace(_name)) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var (_, poll) = await Subscriptions.AddYotoPlaylistAsync(PlaylistId, _cardId, _name.Trim(), _picked);
+            var what = $"{_picked.Count} track(s)";
+            Notices.Set(PlaylistId, $"Added {_name.Trim()} ({what}). {poll.Describe()} It's published on the next sync.");
+            Nav.NavigateTo($"/playlists/{PlaylistId}");
+        }
+        catch (Exception ex)
+        {
+            _error = $"Couldn't add the Yoto playlist: {ex.Message}";
+            _busy = false;
+        }
+    }
+}

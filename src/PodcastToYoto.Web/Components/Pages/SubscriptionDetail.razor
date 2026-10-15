@@ -22,7 +22,9 @@ else if (_sub is null)
 }
 else
 {
-    <div class="row page-head"><h1>Podcast</h1></div>
+    var yoto = _sub.IsYotoPlaylist;
+    var items = yoto ? "tracks" : "episodes";
+    <div class="row page-head"><h1>@(yoto ? "Yoto playlist" : "Podcast")</h1></div>
     <section class="card">
         @* Grid: cover | title on top, details below. On narrow screens the details span the full width. *@
         <div class="sub-hero @(_sub.CoverSourceUrl is null ? "no-cover" : "")">
@@ -32,7 +34,14 @@ else
             }
             <div class="hero-title">
                 <h2>@_sub.Name</h2>
-                <div class="muted" style="overflow-wrap:anywhere">@_sub.FeedUrl</div>
+                @if (yoto)
+                {
+                    <div class="muted">Tracks reused from <CardLink CardId="@_sub.SourceCardId" Title="@_sub.Name" /></div>
+                }
+                else
+                {
+                    <div class="muted" style="overflow-wrap:anywhere">@_sub.FeedUrl</div>
+                }
             </div>
             <div class="hero-body">
                 <dl class="kv">
@@ -41,9 +50,18 @@ else
                         <a class="cardlink" href="/playlists/@_playlist!.Id">@_playlist.Name</a>
                         @if (!_sub.Enabled) { <span class="badge after none">Not included</span> }
                     </dd>
-                    <dt>Episodes</dt>
-                    <dd>@_sub.Episodes.Count total · @_sub.Episodes.Count(e => e.IsFavourite) favourites · @_positions.Count on playlist · @_sub.Episodes.Count(e => e.AudioId is not null) uploaded</dd>
-                    <dt>Feed checked</dt>
+                    @if (yoto)
+                    {
+                        <dt>Tracks</dt>
+                        <dd>@_sub.Episodes.Count total · @_sub.Episodes.Count(e => e.IsFavourite) favourites · @_positions.Count on playlist</dd>
+                        <dt>Checked</dt>
+                    }
+                    else
+                    {
+                        <dt>Episodes</dt>
+                        <dd>@_sub.Episodes.Count total · @_sub.Episodes.Count(e => e.IsFavourite) favourites · @_positions.Count on playlist · @_sub.Episodes.Count(e => e.AudioId is not null) uploaded</dd>
+                        <dt>Feed checked</dt>
+                    }
                     <dd>@Format.Ago(_sub.LastPolledAt, Time.GetUtcNow())</dd>
                     @if (_sub.LastError is not null)
                     {
@@ -52,7 +70,7 @@ else
                 </dl>
                 <div class="row">
                     <a class="button primary" href="/playlists/@_playlist.Id">Back to playlist</a>
-                    <button @onclick="PollAsync" disabled="@(_busy || _activity is not null)">Check feed</button>
+                    <button @onclick="PollAsync" disabled="@(_busy || _activity is not null)">@(yoto ? "Check Yoto playlist" : "Check feed")</button>
                     <button @onclick="() => _editing = !_editing">@(_editing ? "Close settings" : "Settings")</button>
                 </div>
                 @if (_activity is not null)
@@ -70,8 +88,8 @@ else
     @if (_editing)
     {
         <section class="card">
-            <h2>Podcast settings</h2>
-            <SubscriptionSettingsForm Model="_settings" OnValidSubmit="SaveAsync" Busy="_busy" PlaylistGroups="@_playlist!.GroupByPodcast">
+            <h2>@(yoto ? "Settings" : "Podcast settings")</h2>
+            <SubscriptionSettingsForm Model="_settings" OnValidSubmit="SaveAsync" Busy="_busy" PlaylistGroups="@(_playlist!.GroupByPodcast || _playlist.Order == PlaylistOrder.Interleaved)" PlaylistInterleaved="@(_playlist.Order == PlaylistOrder.Interleaved)">
                 @if (_confirmDelete)
                 {
                     <button type="button" class="danger" @onclick="DeleteAsync">Really remove?</button>
@@ -82,15 +100,18 @@ else
                     <button type="button" class="danger" @onclick="() => _confirmDelete = true">Remove from playlist</button>
                 }
             </SubscriptionSettingsForm>
-            <p class="muted">Removing forgets this podcast's episodes and favourites here; its tracks leave the Yoto playlist on the next sync. To keep it but stop publishing it, untick "Included in the playlist".</p>
+            <p class="muted">Removing forgets its @items and favourites here; its tracks leave the Yoto playlist on the next sync.</p>
         </section>
 
-        <LogoIconPanel Podcast="_sub" Index="_iconIndex" OnChanged="LoadAsync" />
+        @if (!yoto)
+        {
+            <LogoIconPanel Podcast="_sub" Index="_iconIndex" OnChanged="LoadAsync" />
+        }
     }
 
     <section class="card">
         <div class="row card-head">
-            <h2>Episodes</h2>
+            <h2>@(yoto ? "Tracks" : "Episodes")</h2>
             <div class="row">
                 <input class="text filter" placeholder="Filter…" @bind="_filter" @bind:event="oninput" />
                 <label class="row"><input type="checkbox" @bind="_favouritesOnly" /> Favourites</label>
@@ -107,14 +128,28 @@ else
             </div>
         </div>
         <p class="muted">
-            On the playlist: @_positions.Count episodes (@_sub.RecentCount most recent + favourites, at most @_sub.MaxTracks). # is the position in the whole playlist.
-            @foreach (var w in _plan!.Warnings) { <span class="err-text"> @w</span> }
-            @if (!_sub.UseDefaultIcon && _iconIndex is null && Icons.LastError is not null) { <span class="err-text"> @Icons.LastError</span> }
+            @if (yoto)
+            {
+                @if (_plan?.Rotations.FirstOrDefault(r => r.Source.Id == Id) is { } week)
+                {
+                    <span>On the playlist: @_positions.Count tracks (@_sub.RecentCount rotating weekly + favourites, at most @_sub.MaxTracks); @Format.NextRotation(week, Time.GetUtcNow()). # is the position in the whole playlist.</span>
+                }
+                else
+                {
+                    <span>On the playlist: @_positions.Count tracks (@(_sub.RecentCount > 0 ? $"first {_sub.RecentCount} in {Format.TrackOrder(_sub.Order)} + " : "")favourites, at most @_sub.MaxTracks). # is the position in the whole playlist.</span>
+                }
+            }
+            else
+            {
+                <span>On the playlist: @_positions.Count episodes (@_sub.RecentCount most recent + favourites, at most @_sub.MaxTracks). # is the position in the whole playlist.</span>
+            }
+            @foreach (var w in OwnWarnings) { <span class="err-text">@(" " + w)</span> }
+            @if (!_sub.UseDefaultIcon && _iconIndex is null && Icons.LastError is not null) { <span class="err-text">@(" " + Icons.LastError)</span> }
         </p>
         <div class="table-wrap">
         <table class="eps">
             <thead>
-                <tr><th></th><th title="Position on the playlist">#</th><th title="Icon on the player">Icon</th><th class="wide-only">Published</th><th>Title</th><th class="wide-only">Length</th><th class="wide-only" title="Uploaded to Yoto">☁️</th></tr>
+                <tr><th></th><th title="Position on the playlist">#</th><th title="Icon on the player">Icon</th>@if (!yoto) {<th class="wide-only">Published</th>}<th>Title</th><th class="wide-only">Length</th><th class="wide-only" title="Uploaded to Yoto">☁️</th></tr>
             </thead>
             <tbody>
                 @foreach (var e in VisibleEpisodes)
@@ -125,7 +160,13 @@ else
                             <button class="star @(e.IsFavourite ? "on" : "")" title="@(e.IsFavourite ? "Unpin" : "Pin as favourite")"
                                     @onclick="() => ToggleFavouriteAsync(e)">@(e.IsFavourite ? "★" : "☆")</button>
                         </td>
-                        <td class="num">@pos</td>
+                        <td class="num">
+                            @if (pos is null && e.IsFavourite)
+                            {
+                                <span class="muted" title="Favourite, but left off: over a track limit">–</span>
+                            }
+                            else { @pos }
+                        </td>
                         <td>
                             @{ var shown = EpisodeIcons.Describe(e, _sub, _iconIndex, _iconMatches.GetValueOrDefault(e.Id)); }
                             @if (_iconIndex is not null)
@@ -139,12 +180,12 @@ else
                                 <img class="icon16" src="@url" alt="@shown.Title" title="@shown.Tip" />
                             }
                         </td>
-                        <td class="num wide-only">@Format.Date(e.PublishedAt)</td>
+                        @if (!yoto) { <td class="num wide-only">@Format.Date(e.PublishedAt)</td> }
                         <td class="title">
                             @e.Title
                             @if (e.EpisodeType is "bonus" or "trailer") { <span class="badge after none">@e.EpisodeType</span> }
-                            @if (e.MissingFromFeedSince is not null) { <span class="badge after warn" title="Since @Format.Local(e.MissingFromFeedSince)">not in feed</span> }
-                            <div class="narrow-only muted meta">@Format.Date(e.PublishedAt) · @Format.Duration(e.DurationSeconds)@if (e.AudioId is not null) { <span title="Uploaded to Yoto"> · ☁️</span> }</div>
+                            @if (e.MissingFromFeedSince is not null) { <span class="badge after warn" title="Since @Format.Local(e.MissingFromFeedSince)">@(yoto ? "removed from source" : "not in feed")</span> }
+                            <div class="narrow-only muted meta">@(yoto ? "" : $"{Format.Date(e.PublishedAt)} · ")@Format.Duration(e.DurationSeconds)@if (e.AudioId is not null) { <span title="Uploaded to Yoto"> · ☁️</span> }</div>
                         </td>
                         <td class="num wide-only">@Format.Duration(e.DurationSeconds)</td>
                         <td class="wide-only" title="@(e.AudioId is null ? "" : "Uploaded to Yoto")">@(e.AudioId is null ? "" : "☁️")</td>
@@ -179,6 +220,21 @@ else
     private bool _confirmClearFavs;
     private string _filter = "";
     private string? _message, _activity;
+
+    /// <summary>The plan's warnings about this source (without its name), and playlist-wide ones; not other sources'.</summary>
+    private IEnumerable<string> OwnWarnings
+    {
+        get
+        {
+            var own = $"{_sub!.Name}: ";
+            var others = _playlist!.Subscriptions.Where(s => s.Id != Id).Select(s => $"{s.Name}: ").ToList();
+            foreach (var w in _plan!.Warnings)
+            {
+                if (w.StartsWith(own, StringComparison.Ordinal)) yield return w[own.Length..];
+                else if (!others.Any(o => w.StartsWith(o, StringComparison.Ordinal))) yield return w;
+            }
+        }
+    }
 
     private IEnumerable<Episode> VisibleEpisodes => _sub!.Episodes
         .Where(e => !_favouritesOnly || e.IsFavourite)
@@ -229,7 +285,7 @@ else
     /// <summary>Positions are in the whole playlist, so this podcast's episodes show where they land among the others.</summary>
     private void Replan()
     {
-        _plan = PlaylistPlanner.Plan(_playlist!, _playlist!.Subscriptions);
+        _plan = PlaylistPlanner.Plan(_playlist!, _playlist!.Subscriptions, Time.GetUtcNow());
         _positions = _plan.Episodes.Select((e, i) => (e, i + 1)).Where(x => x.e.SubscriptionId == Id).ToDictionary(x => x.e.Id, x => x.Item2);
     }
 

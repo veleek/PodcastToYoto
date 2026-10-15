@@ -1,4 +1,4 @@
-@* Settings of one podcast within a playlist. *@
+@* Settings of one source (podcast or Yoto playlist) within a playlist. *@
 <EditForm Model="Model" OnValidSubmit="OnValidSubmit" class="form">
     <DataAnnotationsValidator />
 
@@ -7,44 +7,86 @@
         <ValidationMessage For="() => Model.Name" />
     </label>
 
-    <label>Feed URL
-        <InputText @bind-Value="Model.FeedUrl" readonly="@LockFeedUrl" />
-        <ValidationMessage For="() => Model.FeedUrl" />
-    </label>
+    @if (!Model.IsYotoPlaylist)
+    {
+        <label>Feed URL
+            <InputText @bind-Value="Model.FeedUrl" readonly="@LockFeedUrl" />
+            <ValidationMessage For="() => Model.FeedUrl" />
+        </label>
+    }
 
     @* Each label is caption / control / message; the grid lines these up across columns (CSS subgrid)
        so a validation message under one field doesn't push its neighbours out of line. *@
     <div class="grid2">
-        <label>
-            <span class="cap">Recent episodes to keep</span>
-            <InputNumber @bind-Value="Model.RecentCount" min="1" max="100" ParsingErrorMessage="Enter a whole number." />
-            <ValidationMessage For="() => Model.RecentCount" />
-        </label>
-
-        <label>
-            <span class="cap">Max episodes from this podcast <span class="muted">(recent + favourites)</span></span>
-            <InputNumber @bind-Value="Model.MaxTracks" min="1" max="100" ParsingErrorMessage="Enter a whole number." />
-            <ValidationMessage For="() => Model.MaxTracks" />
-        </label>
-
-        @if (PlaylistGroups)
+        @if (Model.IsYotoPlaylist)
         {
             <label>
+                <span class="cap">Tracks to include <span class="muted">(plus favourites)</span></span>
+                <InputSelect @bind-Value="Model.Selection">
+                    <option value="@TrackSelection.First">The first ones, in the order below</option>
+                    <option value="@TrackSelection.RotateWeekly">Rotate weekly through all of them</option>
+                </InputSelect>
+            </label>
+
+            <label>
+                <span class="cap">@(Model.Selection == TrackSelection.RotateWeekly ? "Tracks each week" : "First tracks to include") <span class="muted">(not counting favourites)</span></span>
+                <InputNumber @bind-Value="Model.RecentCount" min="0" max="100" ParsingErrorMessage="Enter a whole number." />
+                <ValidationMessage For="() => Model.RecentCount" />
+            </label>
+
+            <label>
+                <span class="cap">Max tracks from this playlist</span>
+                <InputNumber @bind-Value="Model.MaxTracks" min="1" max="100" ParsingErrorMessage="Enter a whole number." />
+                <ValidationMessage For="() => Model.MaxTracks" />
+            </label>
+
+            @* Always its own order: it picks the first N, and the tracks have no dates to mix in by. *@
+            <label>
                 <span class="cap">Order by</span>
-                <InputSelect @bind-Value="Model.GroupOrder">
-                    <option value="">Same as the playlist</option>
-                    <option value="@PlaylistOrder.NewestFirst">Newest first</option>
-                    <option value="@PlaylistOrder.OldestFirst">Oldest first</option>
+                <InputSelect @bind-Value="Model.Order">
+                    <option value="@PlaylistOrder.NewestFirst">Track order</option>
+                    <option value="@PlaylistOrder.OldestFirst">Track order, reversed</option>
                     <option value="@PlaylistOrder.TitleAscending">Alphabetically A–Z</option>
                     <option value="@PlaylistOrder.TitleDescending">Alphabetically Z–A</option>
                 </InputSelect>
             </label>
         }
+        else
+        {
+            <label>
+                <span class="cap">Recent episodes to keep</span>
+                <InputNumber @bind-Value="Model.RecentCount" min="0" max="100" ParsingErrorMessage="Enter a whole number." />
+                <ValidationMessage For="() => Model.RecentCount" />
+            </label>
+
+            <label>
+                <span class="cap">Max episodes from this podcast <span class="muted">(recent + favourites)</span></span>
+                <InputNumber @bind-Value="Model.MaxTracks" min="1" max="100" ParsingErrorMessage="Enter a whole number." />
+                <ValidationMessage For="() => Model.MaxTracks" />
+            </label>
+
+            @if (PlaylistGroups)
+            {
+                <label>
+                    <span class="cap">Order by</span>
+                    <InputSelect @bind-Value="Model.GroupOrder">
+                        <option value="">@(PlaylistInterleaved ? "Default (newest first)" : "Same as the playlist")</option>
+                        <option value="@PlaylistOrder.NewestFirst">Newest first</option>
+                        <option value="@PlaylistOrder.OldestFirst">Oldest first</option>
+                        <option value="@PlaylistOrder.TitleAscending">Alphabetically A–Z</option>
+                        <option value="@PlaylistOrder.TitleDescending">Alphabetically Z–A</option>
+                    </InputSelect>
+                </label>
+            }
+        }
     </div>
 
-    <label class="check"><InputCheckbox @bind-Value="Model.IncludeTrailers" /> Include trailers</label>
-    <label class="check"><InputCheckbox @bind-Value="Model.MatchIcons" /> Episode icons: pick a Yoto icon from the emoji in each title</label>
-    <label class="check"><InputCheckbox @bind-Value="Model.Enabled" /> Included in the playlist</label>
+    @if (!Model.IsYotoPlaylist)
+    {
+        <label class="check"><InputCheckbox @bind-Value="Model.IncludeTrailers" /> Include trailers</label>
+        <label class="check"><InputCheckbox @bind-Value="Model.MatchIcons" /> Episode icons: pick a Yoto icon from the emoji in each title</label>
+    }
+    <label class="check"><InputCheckbox @bind-Value="Model.Enabled" /> Included in the playlist <span class="muted">· untick to keep its settings and favourites but leave its tracks off the playlist</span></label>
 
     <div class="row">
         <button type="submit" class="primary" disabled="@Busy">@SubmitLabel</button>
@@ -59,7 +101,10 @@
     [Parameter] public bool Busy { get; set; }
     [Parameter] public bool LockFeedUrl { get; set; }
 
-    /// <summary>The playlist groups by podcast, so this podcast's own episode order can be set (hidden otherwise).</summary>
+    /// <summary>The playlist groups or interleaves by podcast, so this podcast's own episode order can be set (hidden otherwise).</summary>
     [Parameter] public bool PlaylistGroups { get; set; }
+
+    /// <summary>The playlist interleaves its sources, so "same as the playlist" means newest first.</summary>
+    [Parameter] public bool PlaylistInterleaved { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
 }
