@@ -13,6 +13,8 @@ using YotoSpike;
 //   feed    [--feed URL] [--count N]           Parse the RSS feed and show newest episodes
 //   push    [--card ID] [--count N] [--feed URL] [--title T] [--no-cover] [--dry-run]
 //                                              Download/upload newest N episodes and create or update a playlist
+//   streams --base URL [--card ID] [--run R] [--title T]
+//                                              Create/update a playlist of stream tracks pointing at tools/StreamProbe
 //
 // Global: --client-id ID (or env YOTO_CLIENT_ID), --data DIR (default ./.yoto-spike)
 
@@ -55,6 +57,8 @@ try
             return await GetCommand();
         case "push":
             return await PushCommand();
+        case "streams":
+            return await StreamsCommand();
         default:
             Console.Error.WriteLine($"Unknown command '{cli.Command}'.");
             PrintHelp();
@@ -268,6 +272,50 @@ async Task<int> PushCommand()
     return 0;
 }
 
+// Stream-track spike (docs/stream-triggers.md): each chapter exercises one player behaviour against StreamProbe.
+async Task<int> StreamsCommand()
+{
+    var baseUrl = cli.Get("base")?.TrimEnd('/') ?? throw new YotoAuthException("--base https://<probe host> is required.");
+    var run = cli.Get("run") ?? DateTime.Now.ToString("MMddHHmm");
+    (string Title, string Path)[] tracks =
+    [
+        ("Plain A", $"/p/{run}/01.mp3?card={run}&ch=01"),  // query string kept?
+        ("Plain B", $"/p/{run}/02.mp3"),                    // fetched before it's played (prefetch)?
+        ("Redirect", $"/p/{run}/03.mp3?redirect=1"),        // 302 followed?
+        ("Slow 5 s", $"/p/{run}/04.mp3?delay=5000"),        // time to first byte tolerated?
+        ("Slow 20 s", $"/p/{run}/05.mp3?delay=20000"),
+        ("Missing", $"/p/{run}/06.mp3?status=404"),         // what the player does on an error
+        ("Trigger", $"/t/{run}-lights/07.mp3"),             // fires the HA webhook
+    ];
+
+    var chapters = tracks.Select((t, i) =>
+    {
+        var key = (i + 1).ToString("00");
+        return new YotoChapter
+        {
+            Key = key,
+            Title = t.Title,
+            OverlayLabel = (i + 1).ToString(),
+            Tracks = [new YotoTrack { Key = "01", Title = t.Title, TrackUrl = baseUrl + t.Path, Type = "stream", Format = "mp3", OverlayLabel = (i + 1).ToString() }],
+        };
+    }).ToList();
+    var request = new YotoContentRequest
+    {
+        CardId = cli.Get("card"),
+        Title = cli.Get("title") ?? $"Stream probe {run}",
+        Content = new YotoContentBody { Chapters = chapters },
+        Metadata = new YotoMetadata { Description = "Stream-track spike: every chapter is a stream from StreamProbe." },
+    };
+
+    var (_, _, api) = CreateYoto();
+    await File.WriteAllTextAsync(Path.Combine(dataDir, "last-request.json"), JsonSerializer.Serialize(request, json), ct);
+    var card = await api.CreateOrUpdateContentAsync(request, ct);
+    await File.WriteAllTextAsync(Path.Combine(dataDir, "last-response.json"), JsonSerializer.Serialize(card, json), ct);
+    Console.WriteLine($"POST /content OK → cardId {card.GetProperty("cardId").GetString()}, run '{run}'");
+    foreach (var t in tracks) Console.WriteLine($"  {t.Title,-10} {baseUrl}{t.Path}");
+    return 0;
+}
+
 static string Sanitize(string s)
 {
     var chars = s.Where(ch => char.IsLetterOrDigit(ch) || ch is ' ' or '-' or '_').ToArray();
@@ -284,6 +332,7 @@ static void PrintHelp() => Console.WriteLine("""
       get     <cardId>
       feed    [--feed URL] [--count N]
       push    [--card ID] [--count N] [--feed URL] [--title T] [--no-cover] [--dry-run]
+      streams --base URL [--card ID] [--run R] [--title T]
 
     Global: --client-id ID (or env YOTO_CLIENT_ID)  --data DIR (default ./.yoto-spike)  --scopes "..."
     """);

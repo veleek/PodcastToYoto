@@ -17,3 +17,6 @@ tokens*.json
 *.db
 *.db-shm
 *.db-wal
+
+# tools/StreamProbe request log
+.stream-probe/
