@@ -1,7 +1,9 @@
 @using PodcastToYoto.Feeds
+@implements IDisposable
 @inject SubscriptionService Subscriptions
+@inject PodcastSearch Search
 
-@* Step 1 of adding a podcast: pick a suggestion or paste a feed URL, then preview it. *@
+@* Step 1 of adding a podcast: pick a suggestion, search by name or paste a feed URL, then preview it. *@
 <section class="card">
     <h2>@Heading</h2>
     @{ var suggestions = PodcastSuggestions.All.Where(s => !Exclude.Contains(s.FeedUrl)).ToList(); }
@@ -16,9 +18,46 @@
         </div>
     }
     <div class="row">
-        <input class="text grow" placeholder="https://… RSS feed URL" @bind="_url" @bind:event="oninput" @onkeydown="OnKey" />
-        <button @onclick="PreviewAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_url))">@if (_busy) { <span class="spinner"></span><text>Loading…</text> } else { <text>Preview</text> }</button>
+        <input class="text grow" placeholder="Search podcasts, or paste an RSS feed URL" @bind="_url" @bind:event="oninput" @bind:after="OnInputChanged" @onkeydown="OnKey" />
+        <button @onclick="GoAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_url))">@if (_busy) { <span class="spinner"></span><text>Loading…</text> } else if (IsUrl(_url)) { <text>Preview</text> } else { <text>Search</text> }</button>
     </div>
+    @if (_results is not null && !IsUrl(_url))
+    {
+        @if (_results.Count == 0)
+        {
+            <div class="muted" style="margin-top:.6rem">No podcasts found for “@_resultsFor”.</div>
+        }
+        else
+        {
+            <ul class="search-results">
+                @foreach (var r in _results)
+                {
+                    var added = Exclude.Contains(r.FeedUrl);
+                    <li>
+                        <button type="button" class="@(added ? "added" : null)" disabled="@(_busy || added)" title="@r.FeedUrl" @onclick="() => PickAsync(r.FeedUrl)">
+                            @if (r.ArtworkUrl is not null)
+                            {
+                                <img src="@r.ArtworkUrl" alt="" loading="lazy" />
+                            }
+                            else
+                            {
+                                <span class="no-art"></span>
+                            }
+                            <span class="grow">
+                                <span class="title">@r.Title</span>
+                                <span class="muted meta">@string.Join(" · ", new[] { r.Author, r.EpisodeCount is { } n ? $"{n} episodes" : null, added ? "already added" : null }.Where(x => x is not null))</span>
+                            </span>
+                            @if (added)
+                            {
+                                <span class="check" aria-hidden="true">✓</span>
+                            }
+                        </button>
+                    </li>
+                }
+            </ul>
+            <div class="muted meta">Results from @Search.Source</div>
+        }
+    }
     @if (_error is not null)
     {
         <div class="alert" style="margin-top:.75rem">@_error</div>
@@ -60,17 +99,67 @@
     private PodcastFeed? _feed;
     private string? _error;
     private bool _busy;
+    private IReadOnlyList<PodcastSearchResult>? _results;
+    private string? _resultsFor;
+    private CancellationTokenSource? _searchCts;
+
+    private const int MinSearchLength = 3;
+    private static readonly TimeSpan SearchDelay = TimeSpan.FromMilliseconds(400);
+
+    private static bool IsUrl(string text) =>
+        text.TrimStart().StartsWith("http://", StringComparison.OrdinalIgnoreCase) || text.TrimStart().StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
     private async Task OnKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter") await PreviewAsync();
+        if (e.Key == "Enter") await GoAsync();
+    }
+
+    private Task GoAsync() => IsUrl(_url) ? PreviewAsync() : SearchAsync(TimeSpan.Zero);
+
+    /// <summary>Search as the user types (after a short pause); URLs wait for Preview.</summary>
+    private Task OnInputChanged() =>
+        IsUrl(_url) || _url.Trim().Length < MinSearchLength ? CancelSearch() : SearchAsync(SearchDelay);
+
+    private Task CancelSearch()
+    {
+        _searchCts?.Cancel();
+        if (string.IsNullOrWhiteSpace(_url)) _results = null;
+        return Task.CompletedTask;
+    }
+
+    private async Task SearchAsync(TimeSpan delay)
+    {
+        var term = _url.Trim();
+        if (term.Length == 0 || IsUrl(term)) return;
+
+        _searchCts?.Cancel();
+        var cts = _searchCts = new CancellationTokenSource();
+        try
+        {
+            if (delay > TimeSpan.Zero) await Task.Delay(delay, cts.Token);
+            if (string.Equals(term, _resultsFor, StringComparison.OrdinalIgnoreCase) && _results is not null) return;
+            _error = null;
+            var results = await Search.SearchAsync(term, cts.Token);
+            if (cts.IsCancellationRequested) return;
+            (_results, _resultsFor) = (results, term);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (!cts.IsCancellationRequested) _error = $"Search failed: {ex.Message}";
+        }
     }
 
     private async Task PickAsync(string url)
     {
+        _searchCts?.Cancel();
         _url = url;
         await PreviewAsync();
     }
+
+    public void Dispose() => _searchCts?.Cancel();
 
     private async Task PreviewAsync()
     {

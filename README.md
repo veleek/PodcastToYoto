@@ -89,6 +89,8 @@ dotnet run --project src/PodcastToYoto.Web --launch-profile http
 | `Sync:DefaultPollInterval`              | `01:00:00`                                                               |                                                                                                      |
 | `Sync:RunOnStartup`                     | `true`                                                                   |                                                                                                      |
 | `Sync:DryRun`                           | `false`                                                                  |                                                                                                      |
+| `PodcastIndex:Key`                      | (off)                                                                    | with `Secret`, podcast search uses [Podcast Index](https://api.podcastindex.org) instead of Apple    |
+| `PodcastIndex:Secret`                   |                                                                          | `PODCASTINDEX_KEY`/`PODCASTINDEX_SECRET` in `deploy/.env` for the container                          |
 | `Notifications:HomeAssistant:BaseUrl`   | (off)                                                                    | e.g. `https://homeassistant.example.com`                                                             |
 | `Notifications:HomeAssistant:WebhookId` |                                                                          | POSTs JSON to `/api/webhook/{id}`; no token needed                                                   |
 | `Notifications:HomeAssistant:Service`   |                                                                          | e.g. `notify.mobile_app_phone` or `persistent_notification.create`                                   |
@@ -135,6 +137,8 @@ A **playlist** is one Yoto MYO playlist; it draws from one or more **podcasts**.
   total tracks cap (oldest non-favourites are dropped first, across podcasts), and the track order: newest first,
   oldest first, or alphabetically A–Z / Z–A (leading emoji and punctuation ignored, numbers in numeric order),
   optionally grouped by podcast in the playlist's podcast order.
+- Podcast search on the add-podcast page: type a name to search Apple Podcasts (no key; ~20 searches a minute) or
+  Podcast Index (when `PodcastIndex:Key`/`Secret` are set). Results are cached for an hour.
 - Suggested podcasts on the add-podcast page: Silly Stories for Kids, But Why, Flip and Mozi, Who Smarted?
   (`src/PodcastToYoto.Web/Subscriptions/PodcastSuggestions.cs`).
 

@@ -71,6 +71,14 @@ builder.Services.AddSingleton<PlaylistService>();
 builder.Services.AddSingleton<SubscriptionNotices>();
 builder.Services.AddSingleton<PlaylistAdopter>();
 builder.Services.AddSingleton<SubscriptionTransfer>();
+builder.Services.AddMemoryCache();
+builder.Services.AddOptions<PodcastIndexOptions>().BindConfiguration(PodcastIndexOptions.Section);
+builder.Services.AddHttpClient(PodcastSearch.HttpClientName, c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(15);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("PodcastToYotoPlaylist/1.0 (self-hosted)"); // Podcast Index requires one
+});
+builder.Services.AddSingleton<PodcastSearch>();
 
 // ---- Yoto --------------------------------------------------------------------------------------
 builder.Services.AddSingleton(sp =>

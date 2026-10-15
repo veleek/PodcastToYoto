@@ -15,6 +15,9 @@ services:
       # - Sync__DefaultPollInterval=01:00:00
       # - Sync__DryRun=true
       - Backup__Directory=/backups
+      # Podcast search: Podcast Index when both are set, otherwise Apple Podcasts (no key).
+      - PodcastIndex__Key=${PODCASTINDEX_KEY:-}
+      - PodcastIndex__Secret=${PODCASTINDEX_SECRET:-}
       # Home Assistant notifications (see README). Webhook needs no token; Service needs HA_TOKEN.
       - Notifications__HomeAssistant__BaseUrl=${HA_BASE_URL:-}
       - Notifications__HomeAssistant__WebhookId=${HA_WEBHOOK_ID}

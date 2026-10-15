@@ -5,12 +5,14 @@
   --accent-text: #6d4bd1;  /* links / accent text on light backgrounds */
   --accent-2: #1f7ac4;     /* selection, focus, spinner */
   --ok: #1f8a4c; --warn: #b26a00; --err: #c0392b;
+  --added: #2fa86a;        /* "already added" marks: a green as vivid as the accent purple */
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #161615; --fg: #ececea; --muted: #9a9a94; --card: #1f1f1d; --border: #33332f;
     --accent-text: #a78bfa;  /* 6:1 on dark cards */
     --accent-2: #5ab4f5;
+    --added: #5ad69a;
   }
 }
 * { box-sizing: border-box; }
@@ -191,6 +193,15 @@ button.icon-btn.pinned { border-style: solid; border-color: var(--accent-2); }
 
 /* ---- Playlists of several podcasts ------------------------------------------------------------- */
 button.chip { padding: .15rem .65rem; border-radius: 999px; font-size: .85rem; }
+/* Podcast search results (FeedChooser) */
+ul.search-results { list-style: none; padding: 0; margin: .6rem 0 .3rem; display: grid; gap: .3rem; }
+ul.search-results button { display: flex; gap: .7rem; align-items: center; width: 100%; text-align: left; padding: .35rem .5rem; }
+ul.search-results button:not(:disabled):hover { border-color: var(--accent-2); }
+ul.search-results img, ul.search-results .no-art { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; flex: none; background: var(--border); }
+ul.search-results .grow { min-width: 0; display: grid; }
+ul.search-results .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ul.search-results button.added { border: 2px solid var(--added); padding: calc(.35rem - 1px) calc(.5rem - 1px); opacity: 1; background: color-mix(in srgb, var(--added) 8%, var(--card)); }
+ul.search-results .check { flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; display: grid; place-items: center; background: var(--added); color: var(--card); font-weight: 700; }
 h3.sub-label { font-size: .95rem; margin: 1rem 0 .4rem; }
 .subs .sub .drag-handle { position: relative; z-index: 1; padding: .2rem .45rem; color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: grab; border-radius: 6px; user-select: none; }
 .subs .sub .drag-handle:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, var(--card)); }
