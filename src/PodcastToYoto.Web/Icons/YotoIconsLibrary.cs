@@ -77,6 +77,22 @@ public sealed class YotoIconsLibrary(IHttpClientFactory httpFactory, YotoApiClie
     /// <summary>Number of icons cached from yotoicons.com (for Settings).</summary>
     public int Count => _state?.Icons.Count ?? 0;
 
+    /// <summary>What's in the cache, for Settings.</summary>
+    public sealed record Stats(int Icons, int Images, long ImageBytes, int Searches, int OnYoto, DateTimeOffset? LastSearch, string Directory);
+
+    public async Task<Stats> GetStatsAsync(CancellationToken ct = default)
+    {
+        await EnsureLoadedAsync(ct);
+        var images = new DirectoryInfo(Path.Combine(_dir, "images"));
+        var files = images.Exists ? images.GetFiles("*.*").Where(f => f.Extension is ".png" or ".gif").ToList() : [];
+        lock (_state!)
+        {
+            return new Stats(_state.Icons.Count, files.Count, files.Sum(f => f.Length), _state.Searches.Count,
+                _state.Icons.Values.Count(i => i.YotoMediaId is not null),
+                _state.Searches.Count == 0 ? null : _state.Searches.Values.Max(s => s.FetchedAt), _dir);
+        }
+    }
+
     // ---- Browsing --------------------------------------------------------------------------
 
     /// <summary><paramref name="index"/> plus every cached yotoicons.com icon (browsable, never auto-matched).</summary>

@@ -8,6 +8,7 @@
 @inject Notifier Notifier
 @inject IOptionsMonitor<HomeAssistantOptions> HaOpts
 @inject PodcastToYoto.Web.Icons.IconCatalog IconCatalog
+@inject PodcastToYoto.Web.Icons.YotoIconsLibrary YotoIcons
 @inject TimeProvider Time
 @inject PodcastToYoto.Web.Backups.BackupService Backups
 @inject IOptionsMonitor<BackupOptions> BackupOpts
@@ -180,6 +181,27 @@
                     </section>
 
                     <section class="card">
+                        <h2>yotoicons.com cache</h2>
+                        <p class="muted">Icons found by searching <a href="@PodcastToYoto.Web.Icons.YotoIconsLibrary.SiteUrl" target="_blank" rel="noopener">yotoicons.com</a>
+                            from the icon pickers. Nothing here is fetched again unless a search is refreshed.</p>
+                        @if (_yotoIcons is { } yi)
+                        {
+                            <dl class="kv">
+                                <dt>Icons</dt>
+                                <dd>@yi.Icons</dd>
+                                <dt>Images</dt>
+                                <dd>@yi.Images downloaded (@((yi.ImageBytes / 1024.0).ToString("F0")) KB)</dd>
+                                <dt>On your Yoto account</dt>
+                                <dd>@yi.OnYoto</dd>
+                                <dt>Searches</dt>
+                                <dd>@yi.Searches@(yi.LastSearch is { } last ? $", last {Format.Ago(last, Time.GetUtcNow())}" : "")</dd>
+                                <dt>Location</dt>
+                                <dd><code>@yi.Directory</code></dd>
+                            </dl>
+                        }
+                    </section>
+
+                    <section class="card">
                         <h2>Configuration <span class="muted">(Read-only)</span></h2>
                         <dl class="kv">
                             <dt>Public URL</dt>
@@ -268,6 +290,7 @@
         _backups = Backups.List();
         try
         {
+            _yotoIcons = await YotoIcons.GetStatsAsync();
             await IconCatalog.GetAsync(); // loads from the disk cache, so the counts above are filled in
         }
         catch (PodcastToYoto.Yoto.YotoAuthException)
@@ -295,6 +318,7 @@
     }
     private string? _error, _result;
     private bool _busy;
+    private PodcastToYoto.Web.Icons.YotoIconsLibrary.Stats? _yotoIcons;
 
     private async Task LoadFileAsync(InputFileChangeEventArgs e)
     {
