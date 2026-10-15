@@ -20,17 +20,16 @@
     <div class="grid2">
         @if (Model.IsYotoPlaylist)
         {
+            @* "3 first in order" / "3 rotating weekly": the count and how they're picked read as one setting. *@
             <label>
                 <span class="cap">Tracks to include <span class="muted">(plus favourites)</span></span>
-                <InputSelect @bind-Value="Model.Selection">
-                    <option value="@TrackSelection.First">The first ones, in the order below</option>
-                    <option value="@TrackSelection.RotateWeekly">Rotate weekly through all of them</option>
-                </InputSelect>
-            </label>
-
-            <label>
-                <span class="cap">@(Model.Selection == TrackSelection.RotateWeekly ? "Tracks each week" : "First tracks to include") <span class="muted">(not counting favourites)</span></span>
-                <InputNumber @bind-Value="Model.RecentCount" min="0" max="100" ParsingErrorMessage="Enter a whole number." />
+                <span class="combo">
+                    <InputNumber @bind-Value="Model.RecentCount" min="0" max="100" ParsingErrorMessage="Enter a whole number." />
+                    <InputSelect @bind-Value="Model.Selection" title="First N in the order set here, or a new N each week until all have played">
+                        <option value="@TrackSelection.First">first in order</option>
+                        <option value="@TrackSelection.RotateWeekly">rotating weekly</option>
+                    </InputSelect>
+                </span>
                 <ValidationMessage For="() => Model.RecentCount" />
             </label>
 

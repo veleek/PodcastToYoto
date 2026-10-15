@@ -157,49 +157,34 @@
                 </section>
 
                 <section class="card">
-                    <h2>Yoto icon library</h2>
-                    <p class="muted">Cached on disk and refreshed from Yoto every
-                        @((int)PodcastToYoto.Web.Icons.IconCatalog.Ttl.TotalDays) days.</p>
-                        <dl class="kv">
-                            <dt>Icons</dt>
-                            <dd>@(IconCatalog.Count == 0 ? "not loaded" : IconCatalog.Count.ToString())</dd>
-                            <dt>Fetched</dt>
-                            <dd>@(IconCatalog.FetchedAt is null ? "never" : $"{Format.Ago(IconCatalog.FetchedAt, Time.GetUtcNow())} ({Format.Local(IconCatalog.FetchedAt)})")</dd>
-                            @if (IconCatalog.LastError is not null)
-                            {
-                                <dt>Last error</dt>
-                                <dd class="err-text">@IconCatalog.LastError</dd>
-                            }
-                        </dl>
-                        <div class="row">
-                            <button @onclick="RefreshIconsAsync" disabled="@_busy">Refresh now</button>
-                            @if (_iconMessage is not null)
-                            {
-                                <span class="muted">@_iconMessage</span>
-                            }
-                        </div>
-                    </section>
-
-                    <section class="card">
-                        <h2>yotoicons.com cache</h2>
-                        <p class="muted">Icons found by searching <a href="@PodcastToYoto.Web.Icons.YotoIconsLibrary.SiteUrl" target="_blank" rel="noopener">yotoicons.com</a>
-                            from the icon pickers. Nothing here is fetched again unless a search is refreshed.</p>
+                    <h2>Icons</h2>
+                    <dl class="kv">
+                        <dt>Yoto library</dt>
+                        <dd>
+                            @(IconCatalog.Count == 0 ? "Not loaded" : $"{IconCatalog.Count} icons")@(IconCatalog.FetchedAt is { } fetched ? $", fetched {Format.Ago(fetched, Time.GetUtcNow())} ({Format.Local(fetched)})" : "")
+                            <div class="muted">Refreshed from Yoto every @((int)PodcastToYoto.Web.Icons.IconCatalog.Ttl.TotalDays) days.</div>
+                            @if (IconCatalog.LastError is not null) { <div class="err-text">@IconCatalog.LastError</div> }
+                        </dd>
                         @if (_yotoIcons is { } yi)
                         {
-                            <dl class="kv">
-                                <dt>Icons</dt>
-                                <dd>@yi.Icons</dd>
-                                <dt>Images</dt>
-                                <dd>@yi.Images downloaded (@((yi.ImageBytes / 1024.0).ToString("F0")) KB)</dd>
-                                <dt>On your Yoto account</dt>
-                                <dd>@yi.OnYoto</dd>
-                                <dt>Searches</dt>
-                                <dd>@yi.Searches@(yi.LastSearch is { } last ? $", last {Format.Ago(last, Time.GetUtcNow())}" : "")</dd>
-                                <dt>Location</dt>
-                                <dd><code>@yi.Directory</code></dd>
-                            </dl>
+                            <dt>yotoicons.com</dt>
+                            <dd>
+                                @yi.Icons icons cached (@yi.Images images, @((yi.ImageBytes / 1024.0).ToString("F0")) KB), @yi.OnYoto uploaded to your Yoto account
+                                <div class="muted">
+                                    From @yi.Searches search@(yi.Searches == 1 ? "" : "es")@(yi.LastSearch is { } last ? $", the last {Format.Ago(last, Time.GetUtcNow())}" : "")
+                                    in the icon pickers. Only fetched again when a search is refreshed.
+                                </div>
+                            </dd>
                         }
-                    </section>
+                    </dl>
+                    <div class="row">
+                        <button @onclick="RefreshIconsAsync" disabled="@_busy">Refresh Yoto library</button>
+                        @if (_iconMessage is not null)
+                        {
+                            <span class="muted">@_iconMessage</span>
+                        }
+                    </div>
+                </section>
 
                     <section class="card">
                         <h2>Configuration <span class="muted">(Read-only)</span></h2>
