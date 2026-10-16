@@ -9,6 +9,7 @@
 @inject SyncActivity Activity
 @inject NavigationManager Nav
 @inject TimeProvider Time
+@inject SyncScheduler Scheduler
 
 <PageTitle>@(_sub?.Name ?? "Podcast") · Podcast → Yoto</PageTitle>
 
@@ -133,6 +134,10 @@ else
                 @if (_plan?.Rotations.FirstOrDefault(r => r.Source.Id == Id) is { } week)
                 {
                     <span>On the playlist: @_positions.Count tracks (@_sub.RecentCount rotating weekly + favourites, at most @_sub.MaxTracks); @Format.NextRotation(week, Time.GetUtcNow()). # is the position in the whole playlist.</span>
+                    @if (!week.IsNew)
+                    {
+                        <button class="link-btn" @onclick="RotateEarlyAsync" disabled="@(_busy || _activity is not null)">Rotate now</button>
+                    }
                 }
                 else
                 {
@@ -334,6 +339,16 @@ else
         {
             _busy = false;
         }
+    }
+
+    /// <summary>Picks the next tracks now (the weekly changeover stays put) and syncs so they go on the card.</summary>
+    private async Task RotateEarlyAsync()
+    {
+        await Subscriptions.RotateEarlyAsync(Id);
+        _message = Scheduler.RequestSync(PlaylistId)
+            ? "Picked the next tracks; syncing now."
+            : "Picked the next tracks; they go on the card with the sync that's already queued or running.";
+        await LoadAsync();
     }
 
     private async Task ClearFavouritesAsync()

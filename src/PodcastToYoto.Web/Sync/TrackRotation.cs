@@ -37,6 +37,17 @@ public static class TrackRotation
     }
 
     /// <summary>
+    /// Makes the next sync pick the next tracks now, without moving the weekly changeover: the current week is pushed back
+    /// a week, so the new one starts at the current week's start. False if no week has been picked yet.
+    /// </summary>
+    public static bool RotateEarly(Subscription s)
+    {
+        if (s.RotationNumber == 0 || s.RotationStartedAt is not { } start) return false;
+        s.RotationStartedAt = start - Period;
+        return true;
+    }
+
+    /// <summary>
     /// Records new weeks after a sync. Only tracks that made it onto the playlist (past the caps) count as used, so the
     /// week's picks stay the same until it's up.
     /// </summary>

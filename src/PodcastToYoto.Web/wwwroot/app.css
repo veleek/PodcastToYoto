@@ -58,6 +58,7 @@ form.form .grid2 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr
 /* caption / control / message rows shared across the columns */
 form.form .grid2 > label { grid-row: span 3; display: grid; grid-template-rows: subgrid; row-gap: .25rem; align-items: end; }
 form.form .grid2 > label > .validation-message { align-self: start; }
+form.form .grid2 > label.wide { grid-column: span 2; }
 form.form .combo { display: flex; gap: .5rem; }
 form.form .combo > input { flex: none; width: 4.5rem; }
 form.form .combo > select { flex: 1; min-width: 0; }
@@ -170,6 +171,7 @@ input.text.filter { width: 14rem; }
 }
 
 @media (max-width: 420px) {
+  form.form .grid2 > label.wide { grid-column: auto; }
   form.form .grid2 { grid-template-columns: minmax(0, 1fr); }
 }
 

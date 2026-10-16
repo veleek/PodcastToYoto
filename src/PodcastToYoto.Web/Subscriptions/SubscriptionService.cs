@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PodcastToYoto.Feeds;
 using PodcastToYoto.Web.Data;
+using PodcastToYoto.Web.Sync;
 using PodcastToYoto.Yoto;
 
 namespace PodcastToYoto.Web.Subscriptions;
@@ -147,6 +148,14 @@ public sealed class SubscriptionService(
             .SetProperty(x => x.LogoIconMediaId, mediaId)
             .SetProperty(x => x.LogoIconUrl, url)
             .SetProperty(x => x.LogoIcon, mediaId is null ? LogoIconMode.Off : mode), ct);
+    }
+
+    /// <summary>A rotating Yoto playlist source picks its next tracks on the next sync (<see cref="TrackRotation.RotateEarly"/>).</summary>
+    public async Task RotateEarlyAsync(int id, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var s = await db.Subscriptions.SingleAsync(x => x.Id == id, ct);
+        if (TrackRotation.RotateEarly(s)) await db.SaveChangesAsync(ct);
     }
 
     public async Task<int> ClearFavouritesAsync(int subscriptionId, CancellationToken ct = default)

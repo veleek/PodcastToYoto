@@ -136,6 +136,21 @@ public class TrackRotationTests
     }
 
     [Fact]
+    public void Rotating_early_picks_the_next_tracks_and_keeps_the_changeover()
+    {
+        var s = Source(1, "t1", "t2", "t3");
+        Assert.False(TrackRotation.RotateEarly(s)); // nothing to rotate yet
+        Sync(s, Now);
+
+        Assert.True(TrackRotation.RotateEarly(s));
+        Assert.True(Assert.Single(Plan(s, Now.AddDays(2)).Rotations).IsNew);
+        Assert.Equal(["t2"], Sync(s, Now.AddDays(2)));
+        Assert.Equal(Now, s.RotationStartedAt);
+        Assert.Equal(["t2"], Sync(s, Now.AddDays(3)));
+        Assert.Equal(["t3"], Sync(s, Now.AddDays(7)));
+    }
+
+    [Fact]
     public void First_n_ignores_the_rotation()
     {
         var s = Source(2, "t1", "t2", "t3");

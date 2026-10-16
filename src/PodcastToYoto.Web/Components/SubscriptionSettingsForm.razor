@@ -21,7 +21,7 @@
         @if (Model.IsYotoPlaylist)
         {
             @* "3 first in order" / "3 rotating weekly": the count and how they're picked read as one setting. *@
-            <label>
+            <label class="wide">
                 <span class="cap">Tracks to include <span class="muted">(plus favourites)</span></span>
                 <span class="combo">
                     <InputNumber @bind-Value="Model.RecentCount" min="0" max="100" ParsingErrorMessage="Enter a whole number." />
