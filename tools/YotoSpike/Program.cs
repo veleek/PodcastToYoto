@@ -15,6 +15,8 @@ using YotoSpike;
 //                                              Download/upload newest N episodes and create or update a playlist
 //   streams --base URL [--card ID] [--run R] [--title T]
 //                                              Create/update a playlist of stream tracks pointing at tools/StreamProbe
+//   mqtt    [--device ID|name] [--status-every S]
+//                                              Log MQTT player events/status and send commands typed on stdin
 //
 // Global: --client-id ID (or env YOTO_CLIENT_ID), --data DIR (default ./.yoto-spike)
 
@@ -59,6 +61,13 @@ try
             return await PushCommand();
         case "streams":
             return await StreamsCommand();
+        case "mqtt":
+        {
+            var (_, tokens, _) = CreateYoto();
+            var logPath = Path.Combine(dataDir, "mqtt.jsonl");
+            Console.WriteLine($"Logging to {logPath}");
+            return await new MqttSpike(http, tokens.GetAccessTokenAsync, logPath).RunAsync(cli.Get("device"), cli.GetInt("status-every") ?? 0, ct);
+        }
         default:
             Console.Error.WriteLine($"Unknown command '{cli.Command}'.");
             PrintHelp();
@@ -333,6 +342,7 @@ static void PrintHelp() => Console.WriteLine("""
       feed    [--feed URL] [--count N]
       push    [--card ID] [--count N] [--feed URL] [--title T] [--no-cover] [--dry-run]
       streams --base URL [--card ID] [--run R] [--title T]
+      mqtt    [--device ID|name] [--status-every S]   (login with --scopes incl. family:devices:view family:devices:control)
 
     Global: --client-id ID (or env YOTO_CLIENT_ID)  --data DIR (default ./.yoto-spike)  --scopes "..."
     """);

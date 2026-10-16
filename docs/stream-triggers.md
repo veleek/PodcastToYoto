@@ -5,7 +5,7 @@ mark a card "activated" for the week when its first track is played, fire a Home
 starts, or run a puzzle-hunt card that makes the lights blink. How fast is it, and what does the player's request
 tell us?
 
-Status: desk research done, live test pending (needs a real player). Tools: `tools/StreamProbe` (logging server) and
+Status: desk research done, live tests pending (need a real player). Direction as of 2026-10-16: MQTT player events, see "MQTT puzzle mechanics". Tools: `tools/StreamProbe` (logging server) and
 `tools/YotoSpike streams` (creates a test playlist). Fill in **Results** after the run.
 
 ## What's known
@@ -75,7 +75,63 @@ So for the use cases:
 - **Offline.** If the server is down, the stream chapter fails. Check what the player does (the 404 chapter) before
   putting a trigger chapter first on a bedtime card.
 
-## Live test
+## MQTT puzzle mechanics
+
+Ben's direction (2026-10-16): MQTT is the main route. The puzzle ideas are to insert a card and then enter a "passcode"
+with button presses, or play tracks in a specific order, or require headphones. A correct answer shows something on
+the display or plays custom audio.
+
+What the [MQTT docs](https://yoto.dev/players-mqtt/mqtt-docs) expose for each one:
+
+| Mechanic | Input available | Verdict |
+|---|---|---|
+| Card inserted | `status.cardInserted`, `status.activeCard`; events `cardId` with `source: card` | Supported |
+| Tracks played in order | Each event carries `chapterKey`/`trackKey`. The puzzle state machine keys on the sequence of chapters reached. | Supported if an event is published on every chapter change. Needs testing |
+| Button "passcode" | **No raw button events.** A button press shows up only as its effect: a chapter or track change (`source: button`), play/pause (`playbackStatus`), or a `volume` change. | Feasible as a code made of effects: skip forward/back to chapter N, pause, or set the volume dial to positions. A literal press sequence isn't visible |
+| Headphones | `status.headphones` (wired) and `status.bluetoothHp` | Supported if status is pushed on change. Otherwise the server asks for `status/request` on each puzzle step |
+| Show something | `command/display/preview` `{ uri, timeout, animated }` shows **one 16×16 icon** for `timeout` seconds | Small pixel art only. Several previews in a row can make a short animation or "spell" something. The URI format is undocumented; test a yoto icon `mediaUrl` and a `yoto:#` ref |
+| Play custom audio | `command/card/start` `{ uri: "https://yoto.io/{cardId}", chapterKey, trackKey, secondsIn, cutOff, anyButtonStop }` | Supported. The reward is a hidden MYO playlist on the account. It plays without inserting its card, and `cutOff` plays just a clip. For dynamic audio, the reward playlist can be stream tracks from StreamProbe |
+| Other outputs | `volume/set`, `ambients/set` (nightlight colour), `sleep-timer/set`, `card/stop` | Nightlight colour is another feedback channel. The payload shape needs testing |
+
+Constraints:
+- Only players on Ben's account, so the puzzle runs on his own players.
+- The token needs `family:devices:view` and `family:devices:control` ([scopes](https://yoto.dev/authentication/scopes/)).
+  The app's default scopes don't include them, so the dev-portal app may need those scopes enabled, and a fresh login.
+- Broker: AWS IoT over `wss`, username `{deviceId}?x-amz-customauthorizer-name=PublicJWTAuthorizer`, password = access
+  token, client id `DASH{deviceId}`. There's one connection per player. Idle connections drop after ~5 min, so
+  publish `events/request` every 295 s.
+- `anyButtonStop: true` on a reward `card/start` would end it on any press. It's useful for "press to continue".
+- Overriding the inserted card: if `card/start` plays a different playlist while the puzzle card is in, it isn't
+  known what happens when the child presses a button, or whether removing and reinserting returns to the card.
+
+### MQTT test (`YotoSpike mqtt`)
+
+```powershell
+cd tools/YotoSpike
+dotnet run -- login --scopes "user:content:view user:content:manage family:devices:view family:devices:control offline_access"
+dotnet run -- mqtt --status-every 0            # every player on the account; --device <id|name> for one
+```
+
+It prints one line per message, with the gap since the previous one, and writes full payloads to
+`.yoto-spike/mqtt.jsonl` (and the device list to `devices.json`). Commands typed at the prompt go to every connected
+player: `status`, `events`, `pause`, `resume`, `stop`, `vol <n>`, `play <cardId> [chapterKey] [trackKey]
+[secondsIn] [cutOff]`, `preview <icon uri> [seconds] [animated]`, and `raw <command path> <json>`.
+
+The connection code follows Yoto's docs but is **untested**. The container I built it in can't open websockets
+through its proxy. If it fails to connect, the log line and the exception text say why.
+
+| # | Do | Answers |
+|---|---|---|
+| m1 | Insert a card | Which messages arrive, how long after insert, and does `status` arrive unprompted |
+| m2 | Skip forward 3 chapters, back 1, quickly | One event per chapter change, or coalesced? Latency per press |
+| m3 | Pause/resume, turn the volume up 2 and down 1 | Does each press produce an event? Volume units |
+| m4 | Plug in and unplug headphones (and BT if available) | Pushed on change, or only on `status`? |
+| m5 | `preview <a yoto icon mediaUrl> 5`, then a `yoto:#…` icon ref | Which URI format works, and how fast it shows |
+| m6 | With a card in, `play <other cardId> 01 01 0 10` | Plays a 10 s clip without inserting the card? What happens after the cut-off, and on the next button press? |
+| m7 | `raw ambients/set {"r":255,"g":0,"b":0}` (guessed shape) | Nightlight colour as feedback |
+| m8 | Leave it running for 10 min, idle | Keep-alive and reconnect work |
+
+## Live test (stream tracks)
 
 ### 1. Run the probe
 
