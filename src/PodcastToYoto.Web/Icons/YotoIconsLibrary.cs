@@ -241,12 +241,16 @@ public sealed class YotoIconsLibrary(IHttpClientFactory httpFactory, YotoApiClie
     /// <summary>Content type of a cached image, from its extension.</summary>
     public static string ContentType(string path) => path.EndsWith(".gif", StringComparison.OrdinalIgnoreCase) ? "image/gif" : "image/png";
 
-    /// <summary>The image (first frame, for GIFs) re-encoded as PNG, or null if Skia can't decode it.</summary>
+    /// <summary>
+    /// The image (first frame, for GIFs) re-encoded as a 32-bit RGBA PNG, or null if Skia can't decode it. Yoto rejects
+    /// any other PNG flavour (palette, greyscale, RGB without alpha) when it isn't auto-converting.
+    /// </summary>
     public static byte[]? ToPng(byte[] bytes)
     {
         using var codec = SKCodec.Create(new SKMemoryStream(bytes)); // null for anything that isn't an image
         if (codec is null) return null;
-        using var bitmap = SKBitmap.Decode(codec);
+        var info = new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        using var bitmap = SKBitmap.Decode(codec, info);
         if (bitmap is null) return null;
         using var data = bitmap.Encode(SKEncodedImageFormat.Png, 100);
         return data?.ToArray();
@@ -277,6 +281,8 @@ public sealed class YotoIconsLibrary(IHttpClientFactory httpFactory, YotoApiClie
         var path = await GetImagePathAsync(id, ct) ?? throw new InvalidOperationException("Icon image missing.");
         var image = await File.ReadAllBytesAsync(path, ct);
         var type = ContentType(path);
+        // Cached PNGs are kept as yotoicons.com served them, often palette-based, which Yoto refuses without autoConvert.
+        if (type == "image/png") image = ToPng(image) ?? image;
         // Yoto keeps a GIF's animation only without autoConvert, which needs it to be 16x16 already; anything bigger is
         // resized by Yoto (and an animated GIF flattened to its first frame).
         var exact = Is16x16(image);

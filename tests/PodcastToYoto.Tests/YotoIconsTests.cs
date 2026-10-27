@@ -82,6 +82,17 @@ public class YotoIconsImageTests
     }
 
     [Fact]
+    public void Converts_palette_pngs_to_rgba()
+    {
+        // A 16x16 two-colour palette PNG, like many yotoicons.com uploads; Yoto wants colour type 6 (RGBA, 8 bits each).
+        var palette = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAABlBMVEX/AAAAAP9sof2OAAAADUlEQVR42mP4z0ASAAAvAQEAgAxnRwAAAABJRU5ErkJggg==");
+        Assert.Equal(3, palette[25]);
+        var png = YotoIconsLibrary.ToPng(palette)!;
+        Assert.Equal(8, png[24]); // bit depth
+        Assert.Equal(6, png[25]); // colour type
+    }
+
+    [Fact]
     public void Rejects_non_images() =>
         Assert.Null(YotoIconsLibrary.ToPng("<html>blocked</html>"u8.ToArray()));
 }
