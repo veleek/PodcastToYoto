@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # NuGet packages for every project under PodcastToYoto.slnx (src, tests, tools).
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      nuget:
+        patterns: ["*"]
+
+  # Base images in the root Dockerfile (dotnet sdk/aspnet).
+  # deploy/compose.yaml only references the locally built image, so it isn't tracked here.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
