@@ -21,7 +21,7 @@ RUN dotnet publish src/PodcastToYoto.Web/PodcastToYoto.Web.csproj \
         -c Release -o /app /p:UseAppHost=false /p:SourceRevisionId="$GIT_SHA"
 
 # ---- Runtime -------------------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 WORKDIR /app
 
 # /data holds the SQLite DB, Data Protection keys and temp downloads. Owned by the non-root `app` user
